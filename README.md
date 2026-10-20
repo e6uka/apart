@@ -31,7 +31,7 @@ terminal ── apart repl ──▶ daemon (Node, ~/.apart/daemon.sock)
 ```
 
 - **Daemon.** Started on demand by the CLI and kept running. It listens on a Unix socket (mode 0600) for scripts and on a loopback WebSocket for the extension. Scripts run in a `node:vm` context with only the documented globals: no `require`, no `process`, and a filesystem view confined to the per-run directory.
-- **Extension.** Dials the daemon, answers pings so Chrome keeps the service worker alive, and executes tab and `chrome.debugger` requests. Tabs it opens are inactive, grouped under "apart", and closed when the script ends or the daemon goes away.
+- **Extension.** Dials the daemon, answers pings so Chrome keeps the service worker alive, and executes tab and `chrome.debugger` requests. Tabs it opens come to the front so you can watch, are grouped under "apart", and are closed when the script ends or the daemon goes away; Chrome then returns to the tab you were on.
 - **Reading pages.** `snapshot()` injects a small script into an isolated world that walks the DOM, computes ARIA roles and accessible names, and prints a tree with refs (`[ref=e12]`) for every interactive element. `snapshot().diff` shows what changed since the previous snapshot, ignoring ref renumbering.
 
 No browser fork, no remote debugging port and no cloud service are involved: everything runs on your machine, through an extension you load yourself.
@@ -49,7 +49,7 @@ Runs without a flag use your default browser. `./install.sh` asks for it the fir
 
 - **Toolbar popup.** Whether the terminal can reach Chrome right now, and the last three runs. When it is not connected, it shows the command to start apart, with a Copy button and a Check now button.
 - **Activity.** Every run with the pages it opened, which browser it used, how long it took and any error, searchable and filterable by result, browser, time and sort order. Headless runs made while Chrome was closed show up the next time the extension connects. Successful runs that open nothing (such as an agent's readiness check) are left out.
-- **Settings.** Connection details, the default browser, the daemon port, a setup checklist, and what apart keeps: the last 200 runs, with page addresses stripped of query strings and fragments, stored in this browser and in `~/.apart/history.json`. Clearing it there removes both.
+- **Settings.** Connection details, the default browser, whether tabs stay open when a script ends, the daemon port, a setup checklist, and what apart keeps: the last 200 runs, with page addresses stripped of query strings and fragments, stored in this browser and in `~/.apart/history.json`. Clearing it there removes both.
 
 Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart from yours.
 
@@ -100,7 +100,8 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 | Command | What it does |
 | --- | --- |
 | `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--headless` or `--chrome` to pick the browser for this run. Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
-| `apart config default-browser chrome\|headless` | Set the browser runs use without a flag. `apart config` shows the current setting. |
+| `apart config default-browser chrome\|headless` | Set the browser runs use without a flag. `apart config` shows the current settings. |
+| `apart config keep-tabs on\|off` | Leave tabs a script opened in your Chrome open when it ends, instead of closing them. Also in the extension's Settings. |
 | `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. |
 | `apart doctor` | Check Node, the build, the shims, the daemon, the extension and the browser for headless runs. |
 | `apart extension-path` | Print the unpacked extension directory. |
@@ -117,8 +118,8 @@ Each `repl` call is a fresh session. Variables do not persist between calls, and
 
 - `page` — the most recently opened or attached tab (`null` if none)
 - `tabs` — all tabs attached in this session
-- `openTab(url)` → `Page` — open an inactive tab in the "apart" group and wait for it to load
-- `closeTab(page)` — close a tab you opened (a borrowed tab is only detached)
+- `openTab(url)` → `Page` — open a tab in the "apart" group, switch to it in your Chrome (headless has nothing to switch), and wait for it to load
+- `closeTab(page)` — close a tab you opened (a borrowed tab is only detached). Tabs left open close when the script ends, unless `keep-tabs` is on.
 - `listBrowserTabs()` → `[{ targetId, url, title, active }]` — tabs already open in Chrome
 - `attachBrowserTab(targetId)`, `attachActiveBrowserTab()` → `Page` — work in an existing tab
 - `getTabByTargetId(targetId)`

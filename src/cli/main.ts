@@ -28,6 +28,7 @@ Usage:
   apart repl ... --chrome          Use your own Chrome, through the extension
   apart config default-browser chrome|headless
                                    Which one repl uses without a flag (also in the extension's settings)
+  apart config keep-tabs on|off    Leave tabs in your Chrome open when a script ends
   apart daemon start|stop|status   Manage the background daemon (started on demand by repl)
   apart doctor                     Check Node, the build, the daemon, the extension and the shims
   apart extension-path             Print the unpacked extension directory to load in Chrome
@@ -224,8 +225,15 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
   console.log(`daemon: running (pid ${status.pid}, port ${status.port}, up ${Math.round(status.uptimeMs / 1000)}s${status.running ? ", script running" : ""})`);
   console.log(`extension: ${status.extensionConnected ? `connected (version ${status.extensionVersion})` : "not connected"}`);
   console.log(`default browser: ${status.defaultBrowser === "headless" ? "headless" : "your Chrome"}`);
+  console.log(`tabs at script end: ${status.keepTabs ? "left open" : "closed"}`);
   console.log(`headless chrome: ${status.headlessRunning ? "running" : "not running (starts on the next --headless run)"}`);
   return status.extensionConnected ? 0 : 1;
+}
+
+async function notifyConfigChanged(): Promise<void> {
+  await connectSocket()
+    .then((socket) => talk(socket, { type: "config-changed" }, (message) => message.type === "ok"))
+    .catch(() => undefined);
 }
 
 async function commandConfig(positional: string[]): Promise<number> {
@@ -233,28 +241,43 @@ async function commandConfig(positional: string[]): Promise<number> {
   const config = await readConfig();
   if (!key) {
     console.log(`default-browser ${config.defaultBrowser}${config.saved ? "" : " (not chosen yet; this is the default)"}`);
+    console.log(`keep-tabs ${config.keepTabs ? "on" : "off"}`);
     return 0;
   }
-  if (key !== "default-browser") {
-    console.error(`Unknown setting: ${key}. Settings: default-browser`);
-    return 2;
-  }
-  if (value === undefined) {
-    console.log(config.defaultBrowser);
+  if (key === "default-browser") {
+    if (value === undefined) {
+      console.log(config.defaultBrowser);
+      return 0;
+    }
+    if (!isBrowser(value)) {
+      console.error(`default-browser must be one of: ${BROWSERS.join(", ")}`);
+      return 2;
+    }
+    await writeConfig({ defaultBrowser: value });
+    await notifyConfigChanged();
+    console.log(value === "headless"
+      ? "apart repl now uses headless Chrome by default. Add --chrome to use your own Chrome for one run."
+      : "apart repl now uses your Chrome by default. Add --headless for a hidden, signed-out browser.");
     return 0;
   }
-  if (!isBrowser(value)) {
-    console.error(`default-browser must be one of: ${BROWSERS.join(", ")}`);
-    return 2;
+  if (key === "keep-tabs") {
+    if (value === undefined) {
+      console.log(config.keepTabs ? "on" : "off");
+      return 0;
+    }
+    if (value !== "on" && value !== "off") {
+      console.error("keep-tabs must be on or off");
+      return 2;
+    }
+    await writeConfig({ keepTabs: value === "on" });
+    await notifyConfigChanged();
+    console.log(value === "on"
+      ? "Tabs a script opens in your Chrome now stay open when it ends. closeTab() in a script still closes them; headless tabs always close."
+      : "Tabs a script opens now close when it ends.");
+    return 0;
   }
-  await writeConfig({ defaultBrowser: value });
-  await connectSocket()
-    .then((socket) => talk(socket, { type: "config-changed" }, (message) => message.type === "ok"))
-    .catch(() => undefined);
-  console.log(value === "headless"
-    ? "apart repl now uses headless Chrome by default. Add --chrome to use your own Chrome for one run."
-    : "apart repl now uses your Chrome by default. Add --headless for a hidden, signed-out browser.");
-  return 0;
+  console.error(`Unknown setting: ${key}. Settings: default-browser, keep-tabs`);
+  return 2;
 }
 
 async function commandDoctor(flags: Map<string, string | true>): Promise<number> {

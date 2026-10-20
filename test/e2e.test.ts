@@ -126,7 +126,9 @@ describe.skipIf(!enabled)("end to end against Chrome", () => {
         if (process.env.APART_E2E_VERBOSE === "1") process.stderr.write(`  | ${text}\n`);
       },
       code: `
+        const before = (await listBrowserTabs()).find((tab) => tab.active);
         const pg = await openTab(${JSON.stringify(pageUrl)});
+        console.log("FRONT=" + (await listBrowserTabs()).find((tab) => tab.targetId === pg.targetId).active);
         console.log("TITLE=" + await pg.title());
         const s = await snapshot(pg, { interactive: true });
         console.log(s.tree);
@@ -145,6 +147,7 @@ describe.skipIf(!enabled)("end to end against Chrome", () => {
         console.log("ANNOTATED=" + (a.base64Image.length > 1000));
         console.log("FILES=" + (await fs.readdir(".")).sort().join(","));
         await closeTab(pg);
+        console.log("RESTORED=" + ((await listBrowserTabs()).find((tab) => tab.active)?.targetId === before?.targetId));
         console.log("DONE");
       `,
     });
@@ -160,7 +163,28 @@ describe.skipIf(!enabled)("end to end against Chrome", () => {
     expect(text).toMatch(/\+\s+- textbox "Email" \[value="qa@example.com"\]/);
     expect(text).toContain("ANNOTATED=true");
     expect(text).toContain("FILES=shot.jpg");
+    expect(text).toContain("FRONT=true");
+    expect(text).toContain("RESTORED=true");
     expect(text).toContain("DONE");
     expect((await bridge.listTabs()).some((tab) => tab.url.startsWith(pageUrl))).toBe(false);
+  }, 60000);
+
+  it("leaves tabs open at the end when asked, without controlling them", async () => {
+    const out: string[] = [];
+    const keepUrl = `${pageUrl}?kept`;
+    const result = await runScript({
+      bridge,
+      runDir: mkdtempSync(path.join(os.tmpdir(), "apart-e2e-keep-")),
+      timeoutMs: 30000,
+      keepTabs: true,
+      emit: (text) => out.push(text),
+      code: `const pg = await openTab(${JSON.stringify(keepUrl)}); console.log("ID=" + pg.targetId);`,
+    });
+    expect(result.error).toBeUndefined();
+    const tabId = Number(out.find((line) => line.startsWith("ID="))?.slice(3));
+    const kept = (await bridge.listTabs()).find((tab) => tab.tabId === tabId);
+    expect(kept?.url).toBe(keepUrl);
+    await expect(bridge.request("debugger.send", { tabId, method: "Runtime.evaluate", params: { expression: "1" } })).rejects.toThrow();
+    await bridge.request("tabs.close", { tabId });
   }, 60000);
 });

@@ -65,22 +65,29 @@ export async function runDaemon(options: { port: number; version: string }): Pro
 
   const bridge = new ExtensionBridge(options.port, allowedExtensionOrigins(), { version: options.version, pid: process.pid, port: options.port });
   const history = new RunHistory(HISTORY_PATH);
-  let defaultBrowser = (await readConfig()).defaultBrowser;
+  let config = await readConfig();
   const headless = new HeadlessBrowser({ profileDir: HEADLESS_PROFILE_DIR, log });
   bridge.on("connected", (hello: ExtHello) => {
     log(`extension connected (version ${bridge.extensionVersion})`);
     void (async () => {
-      bridge.notify({ type: "config", defaultBrowser: (await readConfig()).defaultBrowser });
+      config = await readConfig();
+      bridge.notify({ type: "config", defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs });
       if (typeof hello.historyClearedAt === "number") await history.clearBefore(hello.historyClearedAt);
       bridge.notify({ type: "history", runs: await history.list() });
     })().catch((error) => log(`could not send run history: ${error instanceof Error ? error.message : String(error)}`));
   });
   bridge.on("disconnected", () => log("extension disconnected"));
   const announceConfig = async (): Promise<void> => {
-    const config = await readConfig();
-    defaultBrowser = config.defaultBrowser;
-    bridge.notify({ type: "config", defaultBrowser });
+    config = await readConfig();
+    bridge.notify({ type: "config", defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs });
   };
+  bridge.on("set-keep-tabs", (keep: unknown) => {
+    if (typeof keep !== "boolean") return;
+    void writeConfig({ keepTabs: keep })
+      .then(announceConfig)
+      .then(() => log(`keep tabs open set to ${keep} from the extension`))
+      .catch((error) => log(`could not save the tab setting: ${error instanceof Error ? error.message : String(error)}`));
+  });
   bridge.on("set-default-browser", (browser: unknown) => {
     if (!isBrowser(browser)) return;
     void writeConfig({ defaultBrowser: browser })
@@ -115,14 +122,15 @@ export async function runDaemon(options: { port: number; version: string }): Pro
     extensionVersion: bridge.extensionVersion,
     running,
     headlessRunning: headless.connected,
-    defaultBrowser,
+    defaultBrowser: config.defaultBrowser,
+    keepTabs: config.keepTabs,
   });
 
   const handleRun = async (socket: net.Socket, request: Extract<CliRequest, { type: "run" }>): Promise<void> => {
     const runDir = path.join(RUNS_DIR, `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomBytes(3).toString("hex")}`);
     await fs.mkdir(runDir, { recursive: true });
-    defaultBrowser = (await readConfig()).defaultBrowser;
-    const browser = isBrowser(request.browser) ? request.browser : defaultBrowser;
+    config = await readConfig();
+    const browser = isBrowser(request.browser) ? request.browser : config.defaultBrowser;
     let backend: BrowserBackend;
     if (browser === "headless") {
       try {
@@ -157,6 +165,7 @@ export async function runDaemon(options: { port: number; version: string }): Pro
         runDir,
         timeoutMs,
         bridge: backend,
+        keepTabs: browser === "chrome" && config.keepTabs,
         emit: (text) => write(socket, { type: "out", text }),
       });
       write(socket, { type: "done", ok: result.ok, error: result.error, elapsedMs: result.elapsedMs, runDir });

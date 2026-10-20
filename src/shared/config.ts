@@ -8,9 +8,10 @@ export const BROWSERS: readonly RunBrowser[] = ["chrome", "headless"];
 
 export interface ApartConfig {
   defaultBrowser: RunBrowser;
+  keepTabs: boolean;
 }
 
-export const DEFAULT_CONFIG: ApartConfig = { defaultBrowser: "chrome" };
+export const DEFAULT_CONFIG: ApartConfig = { defaultBrowser: "chrome", keepTabs: false };
 
 export function isBrowser(value: unknown): value is RunBrowser {
   return typeof value === "string" && (BROWSERS as readonly string[]).includes(value);
@@ -19,15 +20,22 @@ export function isBrowser(value: unknown): value is RunBrowser {
 export async function readConfig(file = CONFIG_PATH): Promise<ApartConfig & { saved: boolean }> {
   try {
     const parsed = JSON.parse(await fs.readFile(file, "utf8")) as Partial<ApartConfig>;
-    return { defaultBrowser: isBrowser(parsed.defaultBrowser) ? parsed.defaultBrowser : DEFAULT_CONFIG.defaultBrowser, saved: true };
+    return {
+      defaultBrowser: isBrowser(parsed.defaultBrowser) ? parsed.defaultBrowser : DEFAULT_CONFIG.defaultBrowser,
+      keepTabs: typeof parsed.keepTabs === "boolean" ? parsed.keepTabs : DEFAULT_CONFIG.keepTabs,
+      saved: true,
+    };
   } catch {
     return { ...DEFAULT_CONFIG, saved: false };
   }
 }
 
-export async function writeConfig(config: ApartConfig, file = CONFIG_PATH): Promise<void> {
+export async function writeConfig(changes: Partial<ApartConfig>, file = CONFIG_PATH): Promise<ApartConfig> {
+  const { saved: _saved, ...current } = await readConfig(file);
+  const config: ApartConfig = { ...current, ...changes };
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.${process.pid}.tmp`;
   await fs.writeFile(temp, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   await fs.rename(temp, file);
+  return config;
 }

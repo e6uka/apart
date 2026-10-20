@@ -52,10 +52,11 @@ export interface ExtensionState {
   runs: RunRecord[];
   port: number | null;
   defaultBrowser: RunBrowser | null;
+  keepTabs: boolean | null;
 }
 
 export async function readState(): Promise<ExtensionState> {
-  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser"]);
+  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser", "keepTabs"]);
   return {
     status: (stored.status as ExtensionState["status"]) ?? null,
     daemon: (stored.daemon as DaemonInfo) ?? null,
@@ -63,6 +64,7 @@ export async function readState(): Promise<ExtensionState> {
     runs: Array.isArray(stored.runs) ? (stored.runs as RunRecord[]) : [],
     port: typeof stored.port === "number" ? stored.port : null,
     defaultBrowser: stored.defaultBrowser === "headless" || stored.defaultBrowser === "chrome" ? stored.defaultBrowser : null,
+    keepTabs: typeof stored.keepTabs === "boolean" ? stored.keepTabs : null,
   };
 }
 

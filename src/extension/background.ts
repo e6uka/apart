@@ -11,6 +11,7 @@ let retryAttempt = 0;
 const RETRY_DELAYS_MS = [1000, 2000, 3000, 5000, 8000, 13000, 20000];
 const attachedTabs = new Set<number>();
 const createdTabs = new Set<number>();
+const returnTo = new Map<number, number>();
 const RECENT_DOWNLOAD_MS = 120000;
 const recentDownloads: { at: number; urls: string[]; result: CompletedDownload | { error: string } }[] = [];
 const downloadWaiters = new Set<{ url: string; settle: (result: CompletedDownload | { error: string }) => void }>();
@@ -119,10 +120,29 @@ async function detachTab(tabId: number): Promise<void> {
   await chrome.debugger.detach({ tabId }).catch(() => undefined);
 }
 
+async function restorePreviousTab(tabId: number): Promise<void> {
+  let previous = returnTo.get(tabId);
+  const seen = new Set<number>([tabId]);
+  while (previous !== undefined && createdTabs.has(previous) && !seen.has(previous)) {
+    seen.add(previous);
+    previous = returnTo.get(previous);
+  }
+  returnTo.delete(tabId);
+  if (previous === undefined || createdTabs.has(previous)) return;
+  const closing = await chrome.tabs.get(tabId).catch(() => null);
+  if (!closing?.active) return;
+  await chrome.tabs.update(previous, { active: true }).catch(() => undefined);
+}
+
+async function closeTab(tabId: number): Promise<void> {
+  await restorePreviousTab(tabId);
+  createdTabs.delete(tabId);
+  await chrome.tabs.remove(tabId).catch(() => undefined);
+}
+
 async function closeCreatedTabs(): Promise<void> {
-  const ids = Array.from(createdTabs);
-  createdTabs.clear();
-  await Promise.allSettled(ids.map((tabId) => chrome.tabs.remove(tabId)));
+  const ids = Array.from(createdTabs).reverse();
+  for (const tabId of ids) await closeTab(tabId);
 }
 
 async function detachAll(): Promise<void> {
@@ -136,17 +156,25 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       return (await chrome.tabs.query({})).filter((tab) => tab.id !== undefined).map(toInfo);
     case "tabs.create": {
       const windowId = await pickWindowId();
-      const tab = await chrome.tabs.create({ url: String(params.url ?? "about:blank"), active: false, windowId });
+      const [previous] = await chrome.tabs.query({ active: true, windowId });
+      const tab = await chrome.tabs.create({ url: String(params.url ?? "about:blank"), active: true, windowId });
       if (tab.id === undefined) throw new Error("Chrome did not return a tab id");
       createdTabs.add(tab.id);
+      if (previous?.id !== undefined) returnTo.set(tab.id, previous.id);
       await groupTab(tab);
       return toInfo(tab);
     }
     case "tabs.close": {
       const tabId = Number(params.tabId);
       await detachTab(tabId);
+      await closeTab(tabId);
+      return true;
+    }
+    case "tabs.release": {
+      const tabId = Number(params.tabId);
+      await detachTab(tabId);
       createdTabs.delete(tabId);
-      await chrome.tabs.remove(tabId).catch(() => undefined);
+      returnTo.delete(tabId);
       return true;
     }
     case "tabs.active": {
@@ -199,7 +227,7 @@ async function handleMessage(ws: WebSocket, message: DaemonToExt): Promise<void>
     } else if (message.type === "run-started") await chrome.storage.local.set({ current: message.run });
     else if (message.type === "run-finished") await recordRuns([message.run], message.run.browser !== "headless");
     else if (message.type === "history") await recordRuns(message.runs, false);
-    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser });
+    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser, keepTabs: message.keepTabs === true });
     else if (message.type === "run-ended") await chrome.storage.local.set({ current: null });
     return;
   }
@@ -295,12 +323,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     void connect().then(() => sendResponse({ ok: true }), (error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
-  if (message?.type === "apart:set-default-browser") {
+  if (message?.type === "apart:set-default-browser" || message?.type === "apart:set-keep-tabs") {
     if (socket?.readyState !== WebSocket.OPEN) {
       sendResponse({ ok: false, error: "apart is not connected" });
       return false;
     }
-    send({ type: "set-default-browser", browser: message.browser as RunBrowser });
+    if (message.type === "apart:set-default-browser") send({ type: "set-default-browser", browser: message.browser as RunBrowser });
+    else send({ type: "set-keep-tabs", keep: message.keep === true });
     sendResponse({ ok: true });
     return false;
   }
@@ -322,6 +351,7 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   createdTabs.delete(tabId);
+  returnTo.delete(tabId);
   attachedTabs.delete(tabId);
 });
 

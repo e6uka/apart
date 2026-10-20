@@ -48,8 +48,10 @@ describe("RunHistory", () => {
 describe("config", () => {
   it("defaults to your Chrome until a browser is chosen", async () => {
     const file = path.join(mkdtempSync(path.join(os.tmpdir(), "apart-config-")), "config.json");
-    expect(await readConfig(file)).toEqual({ defaultBrowser: "chrome", saved: false });
+    expect(await readConfig(file)).toEqual({ defaultBrowser: "chrome", keepTabs: false, saved: false });
     await writeConfig({ defaultBrowser: "headless" }, file);
-    expect(await readConfig(file)).toEqual({ defaultBrowser: "headless", saved: true });
+    expect(await readConfig(file)).toEqual({ defaultBrowser: "headless", keepTabs: false, saved: true });
+    await writeConfig({ keepTabs: true }, file);
+    expect(await readConfig(file)).toEqual({ defaultBrowser: "headless", keepTabs: true, saved: true });
   });
 });

@@ -9,11 +9,65 @@ const portMessage = document.getElementById("port-message") as HTMLParagraphElem
 const clearRow = document.getElementById("clear-row") as HTMLDivElement;
 const browserChoices = document.getElementById("browser-choices") as HTMLFieldSetElement;
 const browserMessage = document.getElementById("browser-message") as HTMLParagraphElement;
+const tabsChoices = document.getElementById("tabs-choices") as HTMLFieldSetElement;
+const tabsMessage = document.getElementById("tabs-message") as HTMLParagraphElement;
+const keepTabsInput = tabsChoices.querySelector<HTMLInputElement>("input[name=keep-tabs]")!;
 
 let portLoaded = false;
 const SAVED_LABELS: Record<RunBrowser, string> = { chrome: "your Chrome", headless: "headless Chrome" };
 let pendingBrowser: RunBrowser | null = null;
 let pendingTimer: number | undefined;
+let pendingKeepTabs: boolean | null = null;
+let keepTabsTimer: number | undefined;
+
+function renderTabs(state: ExtensionState): void {
+  const live = connectionState(state) === "connected" || connectionState(state) === "running";
+  if (pendingKeepTabs !== null && state.keepTabs === pendingKeepTabs) {
+    window.clearTimeout(keepTabsTimer);
+    tabsMessage.className = "message ok";
+    tabsMessage.textContent = pendingKeepTabs ? "Saved. Tabs stay open when a script ends." : "Saved. Tabs close when a script ends.";
+    pendingKeepTabs = null;
+  }
+  if (pendingKeepTabs !== null) return;
+  tabsChoices.disabled = !live || state.keepTabs === null;
+  keepTabsInput.checked = state.keepTabs === true;
+  if (!live) {
+    tabsMessage.className = "message";
+    tabsMessage.textContent = "Connect apart to change this here, or run apart config keep-tabs on|off in your terminal.";
+  } else if (state.keepTabs === null) {
+    tabsMessage.className = "message";
+    tabsMessage.textContent = "This apart version cannot change it from here. Update apart, then run apart daemon restart.";
+  } else if (tabsMessage.classList.contains("error") || !tabsMessage.classList.contains("ok")) {
+    tabsMessage.className = "message";
+    tabsMessage.textContent = "";
+  }
+}
+
+keepTabsInput.addEventListener("change", async () => {
+  const keep = keepTabsInput.checked;
+  pendingKeepTabs = keep;
+  tabsMessage.className = "message";
+  tabsMessage.textContent = "Saving…";
+  const fail = (text: string) => {
+    pendingKeepTabs = null;
+    tabsMessage.className = "message error";
+    tabsMessage.textContent = text;
+    void render();
+  };
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "apart:set-keep-tabs", keep });
+    if (!response?.ok) {
+      fail("Could not save: apart is not connected. Check the connection above and try again.");
+      return;
+    }
+    window.clearTimeout(keepTabsTimer);
+    keepTabsTimer = window.setTimeout(() => {
+      if (pendingKeepTabs === keep) fail("apart did not confirm the change. Try again, or run apart config keep-tabs in your terminal.");
+    }, 5000);
+  } catch (error) {
+    fail(`Could not save: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
 
 function renderBrowser(state: ExtensionState): void {
   const live = connectionState(state) === "connected" || connectionState(state) === "running";
@@ -71,6 +125,7 @@ async function render(): Promise<void> {
     const state = await readState();
     renderStatusCard(statusRoot, state);
     renderBrowser(state);
+    renderTabs(state);
     if (!portLoaded) {
       portInput.value = String(state.port ?? DEFAULT_PORT);
       portInput.disabled = false;
