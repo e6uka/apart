@@ -81,6 +81,10 @@ if [ -n "$BROWSER" ]; then
   echo "Change it any time in the extension's settings or with: apart config default-browser chrome|headless"
 fi
 
+if [ -z "$BROWSER" ]; then
+  BROWSER=$(node "$TARGET" config default-browser)
+fi
+
 echo
 if [ "$BROWSER" = headless ]; then
   echo "To also use your own Chrome (repl --chrome), load the extension once:"
