@@ -22,6 +22,22 @@
 .field .message.ok { color: var(--ok); }
 .port-input { width: 140px; font-family: var(--mono); }
 
+#browser-message { min-height: 3em; }
+.choices { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; }
+.field .choice {
+  display: flex; margin: 0; font-size: 16px; font-weight: 400; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--radius-control);
+  border: 1px solid var(--line); background: var(--surface); cursor: pointer;
+}
+.choice:hover { background: var(--surface-sunk); }
+.choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.choice:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 1px; }
+.choice input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; flex: none; }
+.choice > span { display: grid; gap: 2px; }
+.choice strong { font-weight: 600; }
+.choice > span > span { color: var(--muted); font-size: 14px; }
+.choices:disabled .choice { cursor: not-allowed; opacity: 0.6; }
+.choices:disabled .choice:hover { background: var(--surface); }
+.choices:disabled input { cursor: not-allowed; }
 .kept { margin: 0; padding-left: 20px; color: var(--text); }
 .kept li { margin-top: 4px; }
 .confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; min-height: 40px; }

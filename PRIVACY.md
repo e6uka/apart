@@ -19,18 +19,21 @@ The extension only controls tabs that a script opened, in the "apart" tab group,
 In this browser's extension storage (`chrome.storage.local`):
 
 - The last 200 runs: when each ran, how long it took, whether it worked, any error message, how many tabs it opened, and the addresses of the pages it visited, with query strings and anything after `#` removed.
-- Your port setting, the current connection status, and the version of the daemon it is connected to.
+- Your port setting, your default browser, the current connection status, and the version of the daemon it is connected to.
 
 On your computer, the apart command line tool keeps:
 
 - A log at `~/.apart/logs/daemon.log`.
 - A folder for each of the last 50 runs under `~/.apart/runs/`, holding any files the script wrote there, such as screenshots.
+- The same run history as the extension, in `~/.apart/history.json`, so headless runs can show in the extension later.
+- Your default browser, in `~/.apart/config.json`.
+- If you use headless runs, a separate Chrome profile in `~/.apart/headless-profile/`. Like any Chrome profile, it keeps cookies and cache from the sites headless runs visit. It is never your own profile.
 
-None of this leaves your computer. You can clear the run history from the extension's Settings page, and delete `~/.apart` at any time.
+None of this leaves your computer. Clearing the run history from the extension's Settings page clears both copies. You can delete `~/.apart` at any time.
 
 ## Your cookies and signed-in sessions
 
-Tabs apart opens use your normal Chrome profile, so websites see you as signed in, exactly as if you had opened the page yourself. apart does not read, copy or export your cookies or passwords. Scripts can read what is shown on the pages they open, and that content goes only to the script running on your computer.
+Tabs apart opens in your Chrome use your normal Chrome profile, so websites see you as signed in, exactly as if you had opened the page yourself. Headless runs use the separate profile above and start signed out. apart does not read, copy or export your cookies or passwords. Scripts can read what is shown on the pages they open, and that content goes only to the script running on your computer.
 
 ## Sharing and selling
 

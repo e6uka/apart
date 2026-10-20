@@ -1,5 +1,5 @@
-import { DEFAULT_PORT } from "../shared/protocol";
-import { bindStatusActions, escapeHtml, icon, onStateChange, readState, renderStatusCard } from "./ui/common";
+import { DEFAULT_PORT, type RunBrowser } from "../shared/protocol";
+import { bindStatusActions, connectionState, escapeHtml, icon, onStateChange, readState, renderStatusCard, type ExtensionState } from "./ui/common";
 
 const statusRoot = document.getElementById("status") as HTMLElement;
 const form = document.getElementById("port-form") as HTMLFormElement;
@@ -7,13 +7,70 @@ const portInput = document.getElementById("port") as HTMLInputElement;
 const saveButton = form.querySelector<HTMLButtonElement>("button[type=submit]")!;
 const portMessage = document.getElementById("port-message") as HTMLParagraphElement;
 const clearRow = document.getElementById("clear-row") as HTMLDivElement;
+const browserChoices = document.getElementById("browser-choices") as HTMLFieldSetElement;
+const browserMessage = document.getElementById("browser-message") as HTMLParagraphElement;
 
 let portLoaded = false;
+const SAVED_LABELS: Record<RunBrowser, string> = { chrome: "your Chrome", headless: "headless Chrome" };
+let pendingBrowser: RunBrowser | null = null;
+let pendingTimer: number | undefined;
+
+function renderBrowser(state: ExtensionState): void {
+  const live = connectionState(state) === "connected" || connectionState(state) === "running";
+  if (pendingBrowser && state.defaultBrowser === pendingBrowser) {
+    window.clearTimeout(pendingTimer);
+    browserMessage.className = "message ok";
+    browserMessage.textContent = `Saved. Runs now use ${SAVED_LABELS[pendingBrowser]} unless they ask for the other one.`;
+    pendingBrowser = null;
+  }
+  if (pendingBrowser) return;
+  browserChoices.disabled = !live || state.defaultBrowser === null;
+  browserChoices.querySelectorAll<HTMLInputElement>("input[name=browser]").forEach((input) => {
+    input.checked = input.value === state.defaultBrowser;
+  });
+  if (!live) {
+    browserMessage.className = "message";
+    browserMessage.textContent = "Connect apart to change this here, or run apart config default-browser chrome|headless in your terminal.";
+  } else if (state.defaultBrowser === null) {
+    browserMessage.className = "message";
+    browserMessage.textContent = "This apart version cannot change it from here. Update apart, then run apart daemon restart.";
+  } else if (browserMessage.classList.contains("error") || !browserMessage.classList.contains("ok")) {
+    browserMessage.className = "message";
+    browserMessage.textContent = "";
+  }
+}
+
+browserChoices.addEventListener("change", async (event) => {
+  const browser = (event.target as HTMLInputElement).value as RunBrowser;
+  pendingBrowser = browser;
+  browserMessage.className = "message";
+  browserMessage.textContent = "Saving…";
+  const fail = (text: string) => {
+    pendingBrowser = null;
+    browserMessage.className = "message error";
+    browserMessage.textContent = text;
+    void render();
+  };
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "apart:set-default-browser", browser });
+    if (!response?.ok) {
+      fail("Could not save: apart is not connected. Check the connection above and try again.");
+      return;
+    }
+    window.clearTimeout(pendingTimer);
+    pendingTimer = window.setTimeout(() => {
+      if (pendingBrowser === browser) fail("apart did not confirm the change. Try again, or run apart config default-browser in your terminal.");
+    }, 5000);
+  } catch (error) {
+    fail(`Could not save: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
 
 async function render(): Promise<void> {
   try {
     const state = await readState();
     renderStatusCard(statusRoot, state);
+    renderBrowser(state);
     if (!portLoaded) {
       portInput.value = String(state.port ?? DEFAULT_PORT);
       portInput.disabled = false;
@@ -81,7 +138,7 @@ clearRow.addEventListener("click", async (event) => {
     await render();
     clearRow.querySelector<HTMLButtonElement>("#clear")?.focus();
   } else if (button.id === "clear-confirm") {
-    await chrome.storage.local.set({ runs: [] });
+    await chrome.storage.local.set({ runs: [], historyClearedAt: Date.now() });
     resetClearRow();
     await render();
     const message = document.getElementById("clear-message");

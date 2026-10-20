@@ -42,6 +42,7 @@ export interface ExtHello {
   type: "hello";
   version: number;
   extensionVersion: string;
+  historyClearedAt?: number;
 }
 
 export interface ExtEvent {
@@ -63,8 +64,11 @@ export interface DaemonInfo {
   port: number;
 }
 
+export type RunBrowser = "chrome" | "headless";
+
 export interface RunRecord {
   id: string;
+  browser?: RunBrowser;
   startedAt: number;
   elapsedMs: number;
   ok: boolean;
@@ -78,17 +82,36 @@ export interface RunStarted {
   startedAt: number;
 }
 
-export type ExtToDaemon = ExtHello | ExtResponse | ExtEvent | ExtDetached | { type: "pong" };
+export type ExtToDaemon =
+  | ExtHello
+  | ExtResponse
+  | ExtEvent
+  | ExtDetached
+  | { type: "pong" }
+  | { type: "clear-history"; before: number }
+  | { type: "set-default-browser"; browser: RunBrowser };
 export type DaemonToExt =
   | ExtRequest
   | { type: "ping" }
   | { type: "welcome"; daemon: DaemonInfo }
   | { type: "run-started"; run: RunStarted }
   | { type: "run-finished"; run: RunRecord }
-  | { type: "run-ended"; id: string };
+  | { type: "run-ended"; id: string }
+  | { type: "history"; runs: RunRecord[] }
+  | { type: "config"; defaultBrowser: RunBrowser };
 
 export const RUN_HISTORY_LIMIT = 200;
 export const MAX_URLS_PER_RUN = 20;
+
+export function mergeRuns(current: readonly RunRecord[], incoming: readonly RunRecord[], clearedAt = 0, limit = RUN_HISTORY_LIMIT): RunRecord[] {
+  const byId = new Map<string, RunRecord>();
+  for (const run of [...current, ...incoming]) {
+    if (run && typeof run.id === "string" && typeof run.startedAt === "number" && run.startedAt >= clearedAt) byId.set(run.id, run);
+  }
+  return Array.from(byId.values())
+    .sort((a, b) => b.startedAt - a.startedAt || b.id.localeCompare(a.id))
+    .slice(0, limit);
+}
 
 export function sanitizeUrl(raw: string): string | null {
   try {
@@ -109,9 +132,10 @@ export interface TabInfo {
 }
 
 export type CliRequest =
-  | { type: "run"; code: string; timeoutMs?: number }
+  | { type: "run"; code: string; timeoutMs?: number; browser?: RunBrowser }
   | { type: "status" }
-  | { type: "stop" };
+  | { type: "stop" }
+  | { type: "config-changed" };
 
 export interface DaemonStatus {
   type: "status";
@@ -121,10 +145,13 @@ export interface DaemonStatus {
   extensionConnected: boolean;
   extensionVersion: string | null;
   running: boolean;
+  headlessRunning: boolean;
+  defaultBrowser: RunBrowser;
 }
 
 export type CliMessage =
   | { type: "out"; text: string }
   | { type: "done"; ok: boolean; error?: string; elapsedMs: number; runDir: string }
   | DaemonStatus
-  | { type: "stopping" };
+  | { type: "stopping" }
+  | { type: "ok" };

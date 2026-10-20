@@ -3,12 +3,15 @@ set -eu
 cd "$(dirname "$0")"
 
 GSTACK=0
+BROWSER=""
 for arg in "$@"; do
   case "$arg" in
     --gstack) GSTACK=1 ;;
+    --browser=chrome|--browser=headless) BROWSER="${arg#--browser=}" ;;
     -h|--help)
-      echo "Usage: ./install.sh [--gstack]"
-      echo "  --gstack  also link apart as ~/.local/bin/aside, the command gstack's browser skills look for"
+      echo "Usage: ./install.sh [--gstack] [--browser=chrome|headless]"
+      echo "  --gstack    also link apart as ~/.local/bin/aside, the command gstack's browser skills look for"
+      echo "  --browser   which browser apart repl uses by default (asked on first install if left out)"
       exit 0
       ;;
     *)
@@ -59,8 +62,31 @@ if [ "$GSTACK" = 1 ]; then
   echo "  (aside is the same binary, for gstack's browser skills)"
 fi
 
+CONFIG="${APART_HOME:-$HOME/.apart}/config.json"
+if [ -z "$BROWSER" ] && [ ! -f "$CONFIG" ] && [ -t 0 ]; then
+  echo
+  echo "Which browser should apart use by default?"
+  echo "  1. Your Chrome: signed in as you, and you can watch it work (needs the extension)"
+  echo "  2. Headless: a hidden Chrome apart starts itself, signed out"
+  printf "Choose 1 or 2 [1]: "
+  read -r answer || answer=""
+  case "$answer" in
+    2) BROWSER=headless ;;
+    *) BROWSER=chrome ;;
+  esac
+fi
+if [ -n "$BROWSER" ]; then
+  echo
+  node "$TARGET" config default-browser "$BROWSER"
+  echo "Change it any time in the extension's settings or with: apart config default-browser chrome|headless"
+fi
+
 echo
-echo "Load the extension once:"
+if [ "$BROWSER" = headless ]; then
+  echo "To also use your own Chrome (repl --chrome), load the extension once:"
+else
+  echo "Load the extension once:"
+fi
 echo "  1. In Chrome open chrome://extensions and turn on Developer mode"
 echo "  2. Click \"Load unpacked\" and choose: $PWD/dist/extension"
 echo

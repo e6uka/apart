@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
+import type { BrowserBackend, TabEvent } from "./backend";
 import {
   PROTOCOL_VERSION,
   type DaemonInfo,
@@ -16,10 +17,7 @@ const REQUEST_TIMEOUT_MS = 60000;
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
 
-export interface TabEvent {
-  method: string;
-  params: unknown;
-}
+export type { TabEvent } from "./backend";
 
 export class ExtensionNotConnectedError extends Error {
   constructor() {
@@ -28,7 +26,7 @@ export class ExtensionNotConnectedError extends Error {
   }
 }
 
-export class ExtensionBridge extends EventEmitter {
+export class ExtensionBridge extends EventEmitter implements BrowserBackend {
   private http: Server | null = null;
   private wss: WebSocketServer | null = null;
   private socket: WebSocket | null = null;
@@ -144,7 +142,7 @@ export class ExtensionBridge extends EventEmitter {
         this.socket = ws;
         this.extensionVersion = message.extensionVersion;
         ws.send(JSON.stringify({ type: "welcome", daemon: this.info }));
-        this.emit("connected");
+        this.emit("connected", message);
         return;
       }
       this.handle(message);
@@ -170,7 +168,9 @@ export class ExtensionBridge extends EventEmitter {
       else pending.reject(new Error(message.error ?? "extension request failed"));
       return;
     }
-    if (message.type === "event") this.emit(`tab:${message.tabId}`, { method: message.method, params: message.params });
+    if (message.type === "clear-history") this.emit("clear-history", message.before);
+    else if (message.type === "set-default-browser") this.emit("set-default-browser", message.browser);
+    else if (message.type === "event") this.emit(`tab:${message.tabId}`, { method: message.method, params: message.params });
     else if (message.type === "detached") this.emit(`tab:${message.tabId}`, { method: "__detached", params: { reason: message.reason } });
   }
 

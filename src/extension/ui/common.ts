@@ -13,7 +13,7 @@ import settingsIcon from "lucide-static/icons/settings.svg";
 import slidersIcon from "lucide-static/icons/sliders-horizontal.svg";
 import trashIcon from "lucide-static/icons/trash-2.svg";
 import xIcon from "lucide-static/icons/x.svg";
-import type { DaemonInfo, RunRecord, RunStarted } from "../../shared/protocol";
+import type { DaemonInfo, RunBrowser, RunRecord, RunStarted } from "../../shared/protocol";
 
 const ICONS = {
   alert: alertIcon,
@@ -51,16 +51,18 @@ export interface ExtensionState {
   current: RunStarted | null;
   runs: RunRecord[];
   port: number | null;
+  defaultBrowser: RunBrowser | null;
 }
 
 export async function readState(): Promise<ExtensionState> {
-  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port"]);
+  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser"]);
   return {
     status: (stored.status as ExtensionState["status"]) ?? null,
     daemon: (stored.daemon as DaemonInfo) ?? null,
     current: (stored.current as RunStarted) ?? null,
     runs: Array.isArray(stored.runs) ? (stored.runs as RunRecord[]) : [],
     port: typeof stored.port === "number" ? stored.port : null,
+    defaultBrowser: stored.defaultBrowser === "headless" || stored.defaultBrowser === "chrome" ? stored.defaultBrowser : null,
   };
 }
 
@@ -115,6 +117,12 @@ export function runTitle(run: RunRecord): string {
   const first = displayUrl(run.urls[0]);
   return run.urls.length > 1 ? `${first} and ${run.urls.length - 1} more` : first;
 }
+
+export function runBrowser(run: RunRecord): RunBrowser {
+  return run.browser === "headless" ? "headless" : "chrome";
+}
+
+export const BROWSER_LABELS: Record<RunBrowser, string> = { chrome: "Your Chrome", headless: "Headless" };
 
 export function resultLabel(run: RunRecord): string {
   return run.ok ? "Done" : "Failed";

@@ -1,7 +1,7 @@
 import path from "node:path";
 import util from "node:util";
 import vm from "node:vm";
-import { ExtensionBridge, ExtensionNotConnectedError } from "./bridge";
+import type { BrowserBackend } from "./backend";
 import { createConfinedFs, resolveInside } from "./confined-fs";
 import { Page, type Ownership } from "./page";
 import { MAX_URLS_PER_RUN, sanitizeUrl, type TabInfo } from "../shared/protocol";
@@ -10,7 +10,7 @@ export interface RunOptions {
   code: string;
   runDir: string;
   timeoutMs: number;
-  bridge: ExtensionBridge;
+  bridge: BrowserBackend;
   emit: (text: string) => void;
 }
 
@@ -71,11 +71,10 @@ class Session {
   page: Page | null = null;
   aborted = false;
 
-  constructor(private readonly bridge: ExtensionBridge, private readonly runDir: string) {}
+  constructor(private readonly bridge: BrowserBackend, private readonly runDir: string) {}
 
   async openTab(url = "about:blank"): Promise<Page> {
     this.assertActive();
-    if (!this.bridge.connected) throw new ExtensionNotConnectedError();
     const info = await this.bridge.request<TabInfo>("tabs.create", { url: "about:blank" });
     this.tabsOpened += 1;
     const page = await this.attach(info.tabId, "owned", "about:blank");

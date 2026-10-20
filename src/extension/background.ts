@@ -1,4 +1,4 @@
-import { DEFAULT_PORT, PROTOCOL_VERSION, RUN_HISTORY_LIMIT, type DaemonToExt, type ExtRequest, type ExtToDaemon, type RunRecord, type TabInfo } from "../shared/protocol";
+import { DEFAULT_PORT, PROTOCOL_VERSION, mergeRuns, type DaemonToExt, type ExtRequest, type ExtToDaemon, type RunBrowser, type RunRecord, type TabInfo } from "../shared/protocol";
 
 const ALARM_NAME = "apart-reconnect";
 const GROUP_TITLE = "apart";
@@ -27,12 +27,18 @@ function queueStorage<T>(task: () => Promise<T>): Promise<T> {
   return next;
 }
 
-function recordRun(run: RunRecord): Promise<void> {
+async function historyClearedAt(): Promise<number> {
+  const { historyClearedAt: at } = await chrome.storage.local.get("historyClearedAt");
+  return typeof at === "number" ? at : 0;
+}
+
+function recordRuns(incoming: RunRecord[], clearCurrent: boolean): Promise<void> {
   return queueStorage(async () => {
     const { runs } = await chrome.storage.local.get("runs");
-    const list = Array.isArray(runs) ? (runs as RunRecord[]).filter((item) => item.id !== run.id) : [];
-    list.unshift(run);
-    await chrome.storage.local.set({ runs: list.slice(0, RUN_HISTORY_LIMIT), current: null });
+    const merged = mergeRuns(Array.isArray(runs) ? (runs as RunRecord[]) : [], incoming, await historyClearedAt());
+    const update: Record<string, unknown> = { runs: merged };
+    if (clearCurrent) update.current = null;
+    await chrome.storage.local.set(update);
   });
 }
 
@@ -141,7 +147,9 @@ async function handleMessage(ws: WebSocket, message: DaemonToExt): Promise<void>
       await chrome.storage.local.set({ daemon: message.daemon, current: null });
       await setStatus("connected");
     } else if (message.type === "run-started") await chrome.storage.local.set({ current: message.run });
-    else if (message.type === "run-finished") await recordRun(message.run);
+    else if (message.type === "run-finished") await recordRuns([message.run], message.run.browser !== "headless");
+    else if (message.type === "history") await recordRuns(message.runs, false);
+    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser });
     else if (message.type === "run-ended") await chrome.storage.local.set({ current: null });
     return;
   }
@@ -175,7 +183,9 @@ async function openSocket(): Promise<void> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ext`);
   socket = ws;
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "hello", version: PROTOCOL_VERSION, extensionVersion: chrome.runtime.getManifest().version }));
+    void historyClearedAt().then((clearedAt) => {
+      ws.send(JSON.stringify({ type: "hello", version: PROTOCOL_VERSION, extensionVersion: chrome.runtime.getManifest().version, ...(clearedAt ? { historyClearedAt: clearedAt } : {}) }));
+    });
   };
   ws.onmessage = (event) => {
     let parsed: DaemonToExt;
@@ -225,12 +235,26 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) void connect();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.port) reconnect();
+  if (area !== "local") return;
+  if (changes.port) reconnect();
+  const clearedAt = changes.historyClearedAt?.newValue;
+  if (typeof clearedAt === "number") send({ type: "clear-history", before: clearedAt });
 });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "apart:connect") return false;
-  void connect().then(() => sendResponse({ ok: true }), (error) => sendResponse({ ok: false, error: String(error) }));
-  return true;
+  if (message?.type === "apart:connect") {
+    void connect().then(() => sendResponse({ ok: true }), (error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+  if (message?.type === "apart:set-default-browser") {
+    if (socket?.readyState !== WebSocket.OPEN) {
+      sendResponse({ ok: false, error: "apart is not connected" });
+      return false;
+    }
+    send({ type: "set-default-browser", browser: message.browser as RunBrowser });
+    sendResponse({ ok: true });
+    return false;
+  }
+  return false;
 });
 chrome.debugger.onEvent.addListener((source, method, params) => {
   if (source.tabId !== undefined) send({ type: "event", tabId: source.tabId, method, params });

@@ -26,6 +26,19 @@
       <div class="status-card" id="status"></div>
     </section>
 
+    <section class="section" aria-labelledby="browser-title">
+      <h2 id="browser-title">Default browser</h2>
+      <p>Which browser <code>apart repl</code> uses when a script does not say. Add <code>--chrome</code> or <code>--headless</code> to choose for one run.</p>
+      <form class="panel field" id="browser-form">
+        <fieldset class="choices" id="browser-choices" disabled>
+          <legend class="visually-hidden">Default browser</legend>
+          <label class="choice"><input type="radio" name="browser" value="chrome"><span><strong>Your Chrome</strong><span>Signed in as you, in the pink apart group. You can watch it work.</span></span></label>
+          <label class="choice"><input type="radio" name="browser" value="headless"><span><strong>Headless</strong><span>A hidden Chrome apart starts itself, signed out. Its runs still show in Activity.</span></span></label>
+        </fieldset>
+        <p class="message" id="browser-message" aria-live="polite"></p>
+      </form>
+    </section>
+
     <section class="section" aria-labelledby="setup-title">
       <h2 id="setup-title">First-time setup</h2>
       <ol class="steps">
@@ -52,10 +65,10 @@
       <h2 id="kept-title">What apart keeps</h2>
       <div class="panel">
         <ul class="kept">
-          <li>The last 200 runs: when they ran, how long they took, whether they worked, and any error.</li>
+          <li>The last 200 runs: when they ran, which browser they used, how long they took, whether they worked, and any error.</li>
           <li>The pages each run opened, without query strings or anything after a #.</li>
-          <li>Your port setting and the connection status.</li>
-          <li>Nothing else. It all stays in this browser and is never sent anywhere.</li>
+          <li>Your port setting, default browser and the connection status.</li>
+          <li>Nothing else. It stays in this browser and in apart's folder on your computer, and is never sent anywhere. Clearing removes it from both.</li>
         </ul>
         <div class="confirm-row" id="clear-row">
           <button class="button danger" type="button" id="clear">Clear activity history</button>

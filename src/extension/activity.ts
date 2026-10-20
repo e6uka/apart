@@ -1,13 +1,14 @@
-import type { RunRecord } from "../shared/protocol";
-import { absoluteTime, displayUrl, duration, escapeHtml, icon, onStateChange, readState, relativeTime, resultBadge, resultLabel } from "./ui/common";
+import type { RunBrowser, RunRecord } from "../shared/protocol";
+import { BROWSER_LABELS, absoluteTime, displayUrl, duration, escapeHtml, icon, onStateChange, readState, relativeTime, resultBadge, resultLabel, runBrowser } from "./ui/common";
 
 type Result = "ok" | "failed";
 type Range = "any" | "1h" | "24h" | "7d";
 type Sort = "newest" | "oldest" | "slowest";
-interface Query { q: string; result: Result[]; range: Range; sort: Sort; page: number }
+interface Query { q: string; result: Result[]; browser: RunBrowser[]; range: Range; sort: Sort; page: number }
 
 const PAGE_SIZE = 25;
 const RESULTS: Result[] = ["ok", "failed"];
+const BROWSERS: RunBrowser[] = ["chrome", "headless"];
 const RANGES: Record<Range, { label: string; ms: number }> = {
   any: { label: "Any time", ms: Infinity },
   "1h": { label: "Last hour", ms: 3600e3 },
@@ -33,12 +34,14 @@ document.querySelectorAll<HTMLElement>("[data-icon]").forEach((el) => {
 function readQuery(): Query {
   const params = new URLSearchParams(location.search);
   const result = (params.get("result") ?? "").split(",").filter((value): value is Result => RESULTS.includes(value as Result));
+  const browser = (params.get("browser") ?? "").split(",").filter((value): value is RunBrowser => BROWSERS.includes(value as RunBrowser));
   const range = (params.get("range") ?? "any") as Range;
   const sort = (params.get("sort") ?? "newest") as Sort;
   const page = Number(params.get("page") ?? "1");
   return {
     q: (params.get("q") ?? "").trim(),
     result: Array.from(new Set(result)),
+    browser: Array.from(new Set(browser)),
     range: range in RANGES ? range : "any",
     sort: sort in SORTS ? sort : "newest",
     page: Number.isInteger(page) && page >= 1 ? page : 1,
@@ -49,6 +52,7 @@ function writeQuery(query: Query): void {
   const params = new URLSearchParams();
   if (query.q) params.set("q", query.q);
   if (query.result.length) params.set("result", query.result.join(","));
+  if (query.browser.length) params.set("browser", query.browser.join(","));
   if (query.range !== "any") params.set("range", query.range);
   if (query.sort !== "newest") params.set("sort", query.sort);
   if (query.page > 1) params.set("page", String(query.page));
@@ -65,6 +69,7 @@ function haystack(run: RunRecord): string {
   return [
     resultLabel(run),
     run.ok ? "ok succeeded success" : "failed error",
+    BROWSER_LABELS[runBrowser(run)],
     ...run.urls,
     ...run.urls.map(displayUrl),
     run.error ?? "",
@@ -80,6 +85,7 @@ function filtered(now = Date.now()): RunRecord[] {
   const windowMs = RANGES[query.range].ms;
   const matches = runs.filter((run) =>
     (query.result.length === 0 || query.result.includes(run.ok ? "ok" : "failed"))
+    && (query.browser.length === 0 || query.browser.includes(runBrowser(run)))
     && (windowMs === Infinity || now - run.startedAt <= windowMs)
     && (!needle || haystack(run).includes(needle)));
   const tie = (a: RunRecord, b: RunRecord) => a.id.localeCompare(b.id);
@@ -89,12 +95,13 @@ function filtered(now = Date.now()): RunRecord[] {
 }
 
 function activeFilterCount(): number {
-  return query.result.length + (query.range !== "any" ? 1 : 0) + (query.sort !== "newest" ? 1 : 0);
+  return query.result.length + query.browser.length + (query.range !== "any" ? 1 : 0) + (query.sort !== "newest" ? 1 : 0);
 }
 
 function syncControls(): void {
   if (document.activeElement !== search) search.value = query.q;
   popover.querySelectorAll<HTMLInputElement>("input[name=result]").forEach((input) => { input.checked = query.result.includes(input.value as Result); });
+  popover.querySelectorAll<HTMLInputElement>("input[name=browser]").forEach((input) => { input.checked = query.browser.includes(input.value as RunBrowser); });
   popover.querySelectorAll<HTMLInputElement>("input[name=range]").forEach((input) => { input.checked = input.value === query.range; });
   popover.querySelectorAll<HTMLInputElement>("input[name=sort]").forEach((input) => { input.checked = input.value === query.sort; });
   const count = activeFilterCount();
@@ -107,6 +114,7 @@ function renderChips(): void {
   const items: string[] = [];
   if (query.q) items.push(`<button class="chip" type="button" data-remove="q" aria-label="Remove search ${escapeHtml(query.q)}">Search: ${escapeHtml(query.q)}${icon("x")}</button>`);
   for (const result of query.result) items.push(`<button class="chip" type="button" data-remove="result" data-value="${result}" aria-label="Remove filter ${RESULT_LABELS[result]}">${RESULT_LABELS[result]}${icon("x")}</button>`);
+  for (const browser of query.browser) items.push(`<button class="chip" type="button" data-remove="browser" data-value="${browser}" aria-label="Remove filter ${BROWSER_LABELS[browser]}">${BROWSER_LABELS[browser]}${icon("x")}</button>`);
   if (query.range !== "any") items.push(`<button class="chip" type="button" data-remove="range" aria-label="Remove filter ${RANGES[query.range].label}">${RANGES[query.range].label}${icon("x")}</button>`);
   if (query.sort !== "newest") items.push(`<button class="chip" type="button" data-remove="sort" aria-label="Remove sort ${SORTS[query.sort]}">${SORTS[query.sort]}${icon("x")}</button>`);
   chips.hidden = items.length === 0;
@@ -123,6 +131,7 @@ function renderRun(run: RunRecord): string {
     ${more}
     <div class="run-meta">
       <span><time datetime="${new Date(run.startedAt).toISOString()}" title="${escapeHtml(absoluteTime(run.startedAt))}">${escapeHtml(absoluteTime(run.startedAt))}</time></span>
+      <span>${BROWSER_LABELS[runBrowser(run)]}</span>
       <span>took ${escapeHtml(duration(run.elapsedMs))}</span>
       <span>${run.tabsOpened} tab${run.tabsOpened === 1 ? "" : "s"} opened</span>
     </div>
@@ -142,7 +151,7 @@ function renderList(): void {
   if (runs.length === 0) {
     listMeta.textContent = "";
     pager.hidden = true;
-    list.innerHTML = `<div class="state-box"><strong>No runs yet</strong><p>Scripts you run from your terminal with <code>apart repl</code>, or through gstack's /browse, appear here.</p></div>`;
+    list.innerHTML = `<div class="state-box"><strong>No runs yet</strong><p>Scripts you run from your terminal with <code>apart repl</code> appear here, in your Chrome or headless.</p></div>`;
     return;
   }
   const matches = filtered();
@@ -212,11 +221,14 @@ popover.addEventListener("change", (event) => {
   if (input.name === "result") {
     const result = Array.from(popover.querySelectorAll<HTMLInputElement>("input[name=result]:checked")).map((el) => el.value as Result);
     update({ result });
+  } else if (input.name === "browser") {
+    const browser = Array.from(popover.querySelectorAll<HTMLInputElement>("input[name=browser]:checked")).map((el) => el.value as RunBrowser);
+    update({ browser });
   } else if (input.name === "range") update({ range: input.value as Range });
   else if (input.name === "sort") update({ sort: input.value as Sort });
 });
 document.getElementById("filters-done")!.addEventListener("click", () => closePopover());
-document.getElementById("filters-reset")!.addEventListener("click", () => update({ result: [], range: "any", sort: "newest" }));
+document.getElementById("filters-reset")!.addEventListener("click", () => update({ result: [], browser: [], range: "any", sort: "newest" }));
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !popover.hidden) {
     event.preventDefault();
@@ -249,6 +261,9 @@ document.addEventListener("click", (event) => {
     case "result":
       update({ result: query.result.filter((value) => value !== target.dataset.value) });
       break;
+    case "browser":
+      update({ browser: query.browser.filter((value) => value !== target.dataset.value) });
+      break;
     case "range":
       update({ range: "any" });
       break;
@@ -257,7 +272,7 @@ document.addEventListener("click", (event) => {
       break;
     case "all":
       search.value = "";
-      update({ q: "", result: [], range: "any", sort: "newest" });
+      update({ q: "", result: [], browser: [], range: "any", sort: "newest" });
       search.focus();
       break;
   }

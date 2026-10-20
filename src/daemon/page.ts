@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { ExtensionBridge, type TabEvent } from "./bridge";
+import type { BrowserBackend, TabEvent } from "./backend";
 import { resolveInside } from "./confined-fs";
 import { diffTrees } from "./diff";
 import { keyDescriptor } from "./keys";
@@ -131,7 +131,7 @@ export class Page {
   private readonly unsubscribe: () => void;
 
   private constructor(
-    private readonly bridge: ExtensionBridge,
+    private readonly bridge: BrowserBackend,
     readonly tabId: number,
     readonly ownership: Ownership,
     private readonly runDir: string,
@@ -149,7 +149,7 @@ export class Page {
     };
   }
 
-  static async attach(bridge: ExtensionBridge, tabId: number, ownership: Ownership, runDir: string, initialUrl: string, onVisit?: (url: string) => void): Promise<Page> {
+  static async attach(bridge: BrowserBackend, tabId: number, ownership: Ownership, runDir: string, initialUrl: string, onVisit?: (url: string) => void): Promise<Page> {
     const page = new Page(bridge, tabId, ownership, runDir, initialUrl, onVisit);
     onVisit?.(initialUrl);
     await bridge.request("debugger.attach", { tabId });

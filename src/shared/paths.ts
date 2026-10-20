@@ -10,6 +10,8 @@ export const APART_HOME = process.env.APART_HOME
 export const PID_PATH = path.join(APART_HOME, "daemon.pid");
 export const LOG_DIR = path.join(APART_HOME, "logs");
 export const RUNS_DIR = path.join(APART_HOME, "runs");
+export const HISTORY_PATH = path.join(APART_HOME, "history.json");
+export const HEADLESS_PROFILE_DIR = path.join(APART_HOME, "headless-profile");
 
 function socketPath(): string {
   const preferred = path.join(APART_HOME, "daemon.sock");

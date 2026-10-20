@@ -1,4 +1,4 @@
-import { bindStatusActions, escapeHtml, icon, onStateChange, readState, relativeTime, renderStatusCard, resultBadge, duration, runTitle } from "./ui/common";
+import { bindStatusActions, escapeHtml, icon, onStateChange, readState, relativeTime, renderStatusCard, resultBadge, duration, runBrowser, runTitle } from "./ui/common";
 
 const statusRoot = document.getElementById("status") as HTMLElement;
 const recentRoot = document.getElementById("recent") as HTMLElement;
@@ -19,7 +19,7 @@ async function render(): Promise<void> {
     recentRoot.innerHTML = state.runs.slice(0, 3).map((run) => `
       <div class="recent-row">
         <div class="line"><span class="page" title="${escapeHtml(run.urls.join("\n"))}">${escapeHtml(runTitle(run))}</span>${resultBadge(run)}</div>
-        <div class="meta"><span>${escapeHtml(relativeTime(run.startedAt + run.elapsedMs))}</span><span>took ${escapeHtml(duration(run.elapsedMs))}</span></div>
+        <div class="meta"><span>${escapeHtml(relativeTime(run.startedAt + run.elapsedMs))}</span><span>took ${escapeHtml(duration(run.elapsedMs))}</span>${runBrowser(run) === "headless" ? "<span>headless</span>" : ""}</div>
         ${run.ok || !run.error ? "" : `<p class="error" title="${escapeHtml(run.error)}">${escapeHtml(run.error)}</p>`}
       </div>`).join("");
   } catch (error) {

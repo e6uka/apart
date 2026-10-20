@@ -5,7 +5,9 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { APART_HOME, LOG_DIR, SOCKET_PATH } from "../shared/paths";
+import { findChrome } from "../daemon/headless";
+import { BROWSERS, isBrowser, readConfig, writeConfig } from "../shared/config";
+import { APART_HOME, HEADLESS_PROFILE_DIR, LOG_DIR, SOCKET_PATH } from "../shared/paths";
 import { DEFAULT_PORT, allowedExtensionIds, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
 
 declare const __APART_VERSION__: string;
@@ -22,6 +24,10 @@ Usage:
   apart repl '<javascript>'        Run a Playwright-style script against Chrome (exit code is always 0)
   apart repl --file script.js      Read the script from a file ("-" reads stdin)
   apart repl ... --timeout <ms>    Script time budget (default 120000, max 600000)
+  apart repl ... --headless        Use a hidden Chrome apart starts itself, signed out
+  apart repl ... --chrome          Use your own Chrome, through the extension
+  apart config default-browser chrome|headless
+                                   Which one repl uses without a flag (also in the extension's settings)
   apart daemon start|stop|status   Manage the background daemon (started on demand by repl)
   apart doctor                     Check Node, the build, the daemon, the extension and the shims
   apart extension-path             Print the unpacked extension directory to load in Chrome
@@ -163,7 +169,8 @@ async function commandRepl(positional: string[], flags: Map<string, string | tru
     console.log(`[error ${error instanceof Error ? error.message : String(error)}]`);
     return;
   }
-  await talk(socket, { type: "run", code, timeoutMs }, (message) => {
+  const browser = flags.has("headless") ? "headless" : flags.has("chrome") ? "chrome" : undefined;
+  await talk(socket, { type: "run", code, timeoutMs, browser }, (message) => {
     if (message.type === "out") process.stdout.write(`${message.text}\n`);
     else if (message.type === "done") {
       process.stdout.write(message.ok ? `[ok ${(message.elapsedMs / 1000).toFixed(1)}s]\n` : `[error ${message.error}]\n`);
@@ -215,7 +222,38 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
   }
   console.log(`daemon: running (pid ${status.pid}, port ${status.port}, up ${Math.round(status.uptimeMs / 1000)}s${status.running ? ", script running" : ""})`);
   console.log(`extension: ${status.extensionConnected ? `connected (version ${status.extensionVersion})` : "not connected"}`);
+  console.log(`default browser: ${status.defaultBrowser === "headless" ? "headless" : "your Chrome"}`);
+  console.log(`headless chrome: ${status.headlessRunning ? "running" : "not running (starts on the next --headless run)"}`);
   return status.extensionConnected ? 0 : 1;
+}
+
+async function commandConfig(positional: string[]): Promise<number> {
+  const [key, value] = positional;
+  const config = await readConfig();
+  if (!key) {
+    console.log(`default-browser ${config.defaultBrowser}${config.saved ? "" : " (not chosen yet; this is the default)"}`);
+    return 0;
+  }
+  if (key !== "default-browser") {
+    console.error(`Unknown setting: ${key}. Settings: default-browser`);
+    return 2;
+  }
+  if (value === undefined) {
+    console.log(config.defaultBrowser);
+    return 0;
+  }
+  if (!isBrowser(value)) {
+    console.error(`default-browser must be one of: ${BROWSERS.join(", ")}`);
+    return 2;
+  }
+  await writeConfig({ defaultBrowser: value });
+  await connectSocket()
+    .then((socket) => talk(socket, { type: "config-changed" }, (message) => message.type === "ok"))
+    .catch(() => undefined);
+  console.log(value === "headless"
+    ? "apart repl now uses headless Chrome by default. Add --chrome to use your own Chrome for one run."
+    : "apart repl now uses your Chrome by default. Add --headless for a hidden, signed-out browser.");
+  return 0;
 }
 
 async function commandDoctor(flags: Map<string, string | true>): Promise<number> {
@@ -243,6 +281,12 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   }
   const chrome = ["/Applications/Google Chrome.app", "/Applications/Chromium.app", "/Applications/Google Chrome Canary.app"].find((app) => existsSync(app));
   check(Boolean(chrome) || process.platform !== "darwin", chrome ? `Chrome at ${chrome}` : "Chrome installed", "install Google Chrome or Chromium");
+  const config = await readConfig();
+  lines.push(`info     default browser: ${config.defaultBrowser === "headless" ? "headless" : "your Chrome"}${config.saved ? "" : " (not chosen yet)"}; change with apart config default-browser chrome|headless`);
+  const headlessChrome = findChrome();
+  if (headlessChrome) lines.push(`ok       headless runs use ${headlessChrome} (profile ${HEADLESS_PROFILE_DIR})`);
+  else if (config.defaultBrowser === "headless") check(false, "Chrome for headless runs", "install Google Chrome or Chromium, or set APART_CHROME to its executable");
+  else lines.push(`info     no Chrome found for --headless runs; set APART_CHROME to a Chrome or Chromium executable`);
   let status = await daemonStatus();
   if (!status) {
     try {
@@ -255,7 +299,9 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   }
   if (status) {
     check(true, `daemon running (pid ${status.pid}, port ${status.port})`);
-    check(status.extensionConnected, status.extensionConnected ? `extension connected (version ${status.extensionVersion})` : "extension not connected",
+    const loadExtension = `in Chrome open chrome://extensions, turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`;
+    if (!status.extensionConnected && config.defaultBrowser === "headless") lines.push(`info     extension not connected; only needed for --chrome runs\n         → ${loadExtension}`);
+    else check(status.extensionConnected, status.extensionConnected ? `extension connected (version ${status.extensionVersion})` : "extension not connected",
       `in Chrome open chrome://extensions, turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`);
   }
   console.log(lines.join("\n"));
@@ -288,6 +334,8 @@ async function main(): Promise<number> {
       return commandDaemon(positional, flags);
     case "doctor":
       return commandDoctor(flags);
+    case "config":
+      return commandConfig(positional);
     case "extension-path":
       console.log(EXTENSION_DIR);
       return 0;
