@@ -61,6 +61,7 @@ Everything the developer dashboard asks for, ready to paste. Upload `dist/store/
 | `tabGroups` | To put tabs apart opens in a labelled "apart" group, so the user can tell them apart from their own tabs. |
 | `alarms` | To reconnect to the apart program on the user's computer after Chrome suspends the service worker. |
 | `storage` | To keep the user's port setting and the local history of recent runs shown in the activity log. |
+| `downloads` | When a script the user runs downloads a file, to find where Chrome saved it so the apart program on the user's computer can copy it into that run's folder. Only downloads that finish while a script is running are looked at, and nothing is sent anywhere else. |
 
 **Remote code:**
 

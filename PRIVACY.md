@@ -14,6 +14,8 @@ The extension connects to the apart daemon, a program you install and run on the
 
 The extension only controls tabs that a script opened, in the "apart" tab group, or a tab you explicitly handed to a script. It closes the tabs it opened when the script ends.
 
+When a script downloads a file, Chrome saves it as usual and the extension tells the daemon where, so the file can be copied into that run's folder. The extension only looks at downloads that finish while a script is running, and keeps what it saw in memory for two minutes.
+
 ## What is stored, and where
 
 In this browser's extension storage (`chrome.storage.local`):

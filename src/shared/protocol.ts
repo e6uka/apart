@@ -23,7 +23,9 @@ export type ExtRequestMethod =
   | "tabs.activate"
   | "debugger.attach"
   | "debugger.detach"
-  | "debugger.send";
+  | "debugger.send"
+  | "downloads.enable"
+  | "downloads.expect";
 
 export interface ExtRequest {
   id: number;
@@ -48,8 +50,16 @@ export interface ExtHello {
 export interface ExtEvent {
   type: "event";
   tabId: number;
+  sessionId?: string;
   method: string;
   params: unknown;
+}
+
+export interface CompletedDownload {
+  path: string;
+  url: string;
+  mimeType?: string;
+  bytes?: number;
 }
 
 export interface ExtDetached {
