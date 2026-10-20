@@ -88,11 +88,11 @@ function headerSvg(theme) {
   const groupWidth = markSize + gap + wordWidth;
   const left = (width - groupWidth) / 2;
   const word = textPath(bold, "apart", left + markSize + gap, 186, fontSize, -0.02);
-  const tagline = "Your real Chrome, for your terminal agent.";
+  const tagline = "Your real browser, for your terminal agent.";
   const tagSize = 30;
   const tagWidth = measure(regular, tagline, tagSize);
   const tag = textPath(regular, tagline, (width - tagWidth) / 2, 262, tagSize);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="apart: your real Chrome, for your terminal agent">`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="apart: your real browser, for your terminal agent">`
     + `<rect width="${width}" height="${height}" rx="24" fill="${t.bg}"/>`
     + `<svg x="${left}" y="${100}" width="${markSize}" height="${markSize}" viewBox="8 8 112 112">${markShapes(theme)}</svg>`
     + `<g fill="${t.text}">${word.svg}</g><g fill="${t.sub}">${tag.svg}</g></svg>`;
@@ -108,7 +108,7 @@ function socialSvg() {
   const wordWidth = measure(bold, "apart", fontSize, -0.02);
   const left = (width - (markSize + gap + wordWidth)) / 2;
   const word = textPath(bold, "apart", left + markSize + gap, 336, fontSize, -0.02);
-  const lines = ["Your real, signed-in Chrome,", "for your terminal agent."];
+  const lines = ["Your real, signed-in browser,", "for your terminal agent."];
   const tagSize = 40;
   const tags = lines.map((line, i) => textPath(regular, line, (width - measure(regular, line, tagSize)) / 2, 440 + i * 54, tagSize));
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`
@@ -127,7 +127,7 @@ function promoSvg() {
   const wordWidth = measure(bold, "apart", fontSize, -0.02);
   const left = (width - (markSize + gap + wordWidth)) / 2;
   const word = textPath(bold, "apart", left + markSize + gap, 154, fontSize, -0.02);
-  const line = "Your real Chrome, for your terminal agent.";
+  const line = "Your real browser, for your terminal agent.";
   const tagSize = 17;
   const tag = textPath(regular, line, (width - measure(regular, line, tagSize)) / 2, 204, tagSize);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`

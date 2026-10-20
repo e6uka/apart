@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="design/brand/header-dark.svg">
-  <img alt="apart: your real Chrome, for your terminal agent" src="design/brand/header-light.svg" width="100%">
+  <img alt="apart: your real browser, for your terminal agent" src="design/brand/header-light.svg" width="100%">
 </picture>
 
 Drive your real, signed-in Chrome from the terminal.
