@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apart logo samples</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --page: #F4F2F0; --card: #FFFFFF; --text: #1A1A1A; --muted: #6A6670; --line: #E3DFE3;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 16px 64px; background: var(--page); color: var(--text); font: 16px/1.5 Figtree, system-ui, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 4px; font-weight: 800; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); margin: 0 0 32px; max-width: 60ch; }
+  h2 { font-size: 20px; margin: 40px 0 4px; }
+  .idea { color: var(--muted); margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .card h3 { margin: 0 0 12px; font-size: 16px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .card h3 span { font-weight: 400; color: var(--muted); font-size: 14px; }
+  .row { display: flex; align-items: center; gap: 20px; padding: 14px 16px; border-radius: 12px; margin-top: 10px; }
+  .row.light { background: var(--paper); }
+  .row.dark { background: var(--night); }
+  .row.dark .wm { color: var(--paper); }
+  .sizes { display: flex; align-items: end; gap: 14px; }
+  .sizes svg { display: block; }
+  .wm { font: 700 30px/1 Figtree, system-ui, sans-serif; letter-spacing: -0.02em; color: var(--ink); display: flex; align-items: center; gap: 10px; }
+  .toolbar { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 8px; background: #DEE1E6; margin-top: 10px; }
+  .toolbar .omni { flex: 1; height: 24px; border-radius: 12px; background: #fff; }
+  .toolbar.dark { background: #35363A; }
+  .toolbar.dark .omni { background: #202124; }
+  .toolbar .ext { width: 16px; height: 16px; border-radius: 50%; background: #9AA0A6; opacity: .6; }
+  .pal { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; }
+  .sw { display: flex; align-items: center; gap: 6px; font: 13px ui-monospace, monospace; color: var(--muted); }
+  .sw i { width: 18px; height: 18px; border-radius: 5px; border: 1px solid rgba(0,0,0,.08); display: inline-block; }
+  .berry { --accent: #C4307C; --accent-night: #EE6AAA; --ink: #241B2C; --paper: #FBF7F8; --night: #1B1620; --tab: "pink"; }
+  .leaf { --accent: #74B83A; --accent-night: #8FD255; --ink: #19210F; --paper: #F6F9F0; --night: #151A10; --tab: "green"; }
+  .note { margin-top: 40px; padding: 16px 20px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); }
+  .note ol { margin: 8px 0 0; padding-left: 20px; }
+  code { font: 14px ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>apart: logo samples</h1>
+  <p class="lede">Four marks, two per idea, each in both candidate palettes. Every mark is shown at real sizes (128, 48, 32 and 16 px) on light and dark, next to the wordmark, and as it would sit in a Chrome toolbar.</p>
+
+  <div class="pal berry"><span class="sw"><i style="background:#C4307C"></i>berry #C4307C</span><span class="sw"><i style="background:#241B2C"></i>ink #241B2C</span><span class="sw"><i style="background:#FBF7F8"></i>paper #FBF7F8</span><span class="sw">hue 329°, tab group: pink</span></div>
+  <div class="pal leaf"><span class="sw"><i style="background:#74B83A"></i>leaf #74B83A</span><span class="sw"><i style="background:#3E6B10"></i>leaf text #3E6B10</span><span class="sw"><i style="background:#19210F"></i>ink #19210F</span><span class="sw"><i style="background:#F6F9F0"></i>paper #F6F9F0</span><span class="sw">hue 92°, tab group: green</span></div>
+
+  <h2>Idea A: two parts, one gap</h2>
+  <p class="idea">One shape split by a clean gap: the agent's part kept apart from yours, inside the same browser.</p>
+  <div class="grid" id="ideaA"></div>
+
+  <h2>Idea B: a tab apart</h2>
+  <p class="idea">A browser tab lifted off the window: the agent's own tab, kept apart from your tabs.</p>
+  <div class="grid" id="ideaB"></div>
+
+  <div class="note">
+    <strong>To choose</strong>, reply with a mark and a palette, for example <code>A1 berry</code>. Things worth judging:
+    <ol>
+      <li>Does it still read at 16 px in the toolbar row?</li>
+      <li>Which one says "my browser, with the agent's part kept separate" to you?</li>
+      <li>Berry or leaf: which feels more like a friendly utility you would leave installed?</li>
+    </ol>
+  </div>
+</main>
+
+<template id="mark-A1">
+  <svg viewBox="0 0 128 128" aria-hidden="true">
+    <rect x="10" y="22" width="62" height="84" rx="20" fill="var(--ink)"/>
+    <rect x="84" y="22" width="34" height="84" rx="17" fill="var(--accent)"/>
+  </svg>
+</template>
+<template id="mark-A2">
+  <svg viewBox="0 0 128 128" aria-hidden="true">
+    <rect x="10" y="44" width="68" height="68" rx="22" fill="var(--ink)"/>
+    <rect x="70" y="14" width="48" height="48" rx="16" fill="var(--accent)" stroke="var(--bg)" stroke-width="10" paint-order="stroke"/>
+  </svg>
+</template>
+<template id="mark-B1">
+  <svg viewBox="0 0 128 128" aria-hidden="true">
+    <path d="M16 70c0-7.7 6.3-14 14-14h68c7.7 0 14 6.3 14 14v30c0 7.7-6.3 14-14 14H30c-7.7 0-14-6.3-14-14z" fill="var(--ink)"/>
+    <path d="M30 44c0-14 8-26 22-26h24c14 0 22 12 22 26z" fill="var(--accent)"/>
+  </svg>
+</template>
+<template id="mark-B2">
+  <svg viewBox="0 0 128 128" aria-hidden="true">
+    <rect x="12" y="38" width="104" height="76" rx="20" fill="var(--ink)"/>
+    <path d="M58 30c0-9 6-16 15-16h22c9 0 15 7 15 16v4H58z" fill="var(--accent)"/>
+    <rect x="24" y="50" width="28" height="8" rx="4" fill="var(--bg)" opacity=".55"/>
+  </svg>
+</template>
+
+<script>
+  const MARKS = {
+    A1: { idea: "ideaA", title: "A1 · split window", note: "your side and the agent's side" },
+    A2: { idea: "ideaA", title: "A2 · stepped apart", note: "the agent's block steps out" },
+    B1: { idea: "ideaB", title: "B1 · lifted tab", note: "a tab floating above the window" },
+    B2: { idea: "ideaB", title: "B2 · tab on the edge", note: "an accent tab on a window" },
+  };
+  const SIZES = [128, 48, 32, 16];
+
+  function mark(id, size, bg) {
+    const svg = document.getElementById(`mark-${id}`).content.firstElementChild.cloneNode(true);
+    svg.setAttribute("width", size);
+    svg.setAttribute("height", size);
+    svg.style.setProperty("--bg", bg);
+    return svg;
+  }
+
+  function row(id, theme) {
+    const el = document.createElement("div");
+    el.className = `row ${theme}`;
+    const sizes = document.createElement("div");
+    sizes.className = "sizes";
+    const bg = theme === "light" ? "var(--paper)" : "var(--night)";
+    for (const size of SIZES) {
+      const svg = mark(id, size, bg);
+      if (theme === "dark") svg.style.setProperty("--ink", "var(--paper)");
+      if (theme === "dark") svg.style.setProperty("--accent", "var(--accent-night)");
+      sizes.appendChild(svg);
+    }
+    el.appendChild(sizes);
+    return el;
+  }
+
+  function wordmark(id, theme) {
+    const el = document.createElement("div");
+    el.className = `row ${theme}`;
+    const wm = document.createElement("div");
+    wm.className = "wm";
+    const svg = mark(id, 34, theme === "light" ? "var(--paper)" : "var(--night)");
+    if (theme === "dark") {
+      svg.style.setProperty("--ink", "var(--paper)");
+      svg.style.setProperty("--accent", "var(--accent-night)");
+    }
+    wm.append(svg, "apart");
+    el.appendChild(wm);
+    return el;
+  }
+
+  function toolbar(id, theme) {
+    const el = document.createElement("div");
+    el.className = `toolbar ${theme === "dark" ? "dark" : ""}`;
+    const omni = document.createElement("div");
+    omni.className = "omni";
+    const a = document.createElement("i"); a.className = "ext";
+    const b = document.createElement("i"); b.className = "ext";
+    const svg = mark(id, 16, theme === "dark" ? "#35363A" : "#DEE1E6");
+    if (theme === "dark") {
+      svg.style.setProperty("--ink", "var(--paper)");
+      svg.style.setProperty("--accent", "var(--accent-night)");
+    }
+    el.append(omni, a, svg, b);
+    return el;
+  }
+
+  for (const [id, meta] of Object.entries(MARKS)) {
+    for (const palette of ["berry", "leaf"]) {
+      const card = document.createElement("section");
+      card.className = `card ${palette}`;
+      const h = document.createElement("h3");
+      h.innerHTML = `${meta.title} · ${palette}<span>${meta.note}</span>`;
+      card.append(h, row(id, "light"), row(id, "dark"), wordmark(id, "light"), wordmark(id, "dark"), toolbar(id, "light"), toolbar(id, "dark"));
+      document.getElementById(meta.idea).appendChild(card);
+    }
+  }
+</script>
+</body>
+</html>

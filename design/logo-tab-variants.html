@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apart tab marks</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --page: #F4F2F0; --card: #FFFFFF; --text: #1A1A1A; --muted: #6A6670; --line: #E3DFE3; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 16px 64px; background: var(--page); color: var(--text); font: 16px/1.5 Figtree, system-ui, sans-serif; }
+  main { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 4px; font-weight: 800; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); margin: 0 0 24px; max-width: 64ch; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .card h2 { margin: 0; font-size: 18px; }
+  .card p { margin: 2px 0 12px; color: var(--muted); font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; padding: 14px 16px; border-radius: 12px; margin-top: 10px; }
+  .sizes { display: flex; align-items: end; gap: 14px; }
+  .sizes svg { display: block; }
+  .wm { font: 700 30px/1 Figtree, system-ui, sans-serif; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
+  .toolbar { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 8px; margin-top: 10px; }
+  .toolbar .omni { flex: 1; height: 24px; border-radius: 12px; }
+  .toolbar .ext { width: 16px; height: 16px; border-radius: 50%; background: #9AA0A6; opacity: .6; }
+  .label { font: 12px ui-monospace, monospace; color: var(--muted); margin: 14px 0 -4px; }
+  .big { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .big div { border-radius: 12px; display: grid; place-items: center; padding: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>apart: tab marks, redrawn</h1>
+  <p class="lede">The same tab shape in all three, so the only thing that changes is the idea. B1′ lifts the tab off the window (the gap is the name). B2′ keeps it attached. B3 shows your tab attached and the agent's tab lifted apart beside it. Berry palette.</p>
+  <div class="grid" id="grid"></div>
+</main>
+
+<template id="mark-B1">
+  <svg viewBox="6 13 116 116" aria-hidden="true">
+    <rect x="8" y="58" width="112" height="56" rx="14" fill="var(--ink)"/>
+    <path d="M10 50c6 0 8-2 9-7l3-9c1-4 4-6 8-6h32c4 0 7 2 8 6l3 9c1 5 3 7 9 7z" fill="var(--accent)"/>
+  </svg>
+</template>
+<template id="mark-B2">
+  <svg viewBox="6 13 116 116" aria-hidden="true">
+    <rect x="8" y="58" width="112" height="56" rx="14" fill="var(--ink)"/>
+    <path d="M10 58c6 0 8-2 9-7l3-9c1-4 4-6 8-6h32c4 0 7 2 8 6l3 9c1 5 3 7 9 7z" fill="var(--accent)"/>
+  </svg>
+</template>
+<template id="mark-B3">
+  <svg viewBox="6 13 116 116" aria-hidden="true">
+    <rect x="8" y="58" width="112" height="56" rx="14" fill="var(--ink)"/>
+    <path d="M8 58c6 0 8-2 9-7l3-9c1-4 4-6 8-6h32c4 0 7 2 8 6l3 9c1 5 3 7 9 7z" fill="var(--ink)"/>
+    <path d="M56 50c6 0 8-2 9-7l3-9c1-4 4-6 8-6h32c4 0 7 2 8 6l3 9c1 5 3 7 9 7z" fill="var(--accent)"/>
+  </svg>
+</template>
+
+<script>
+  const MARKS = [
+    ["B1", "B1′ · lifted", "The agent's tab, kept apart. The gap carries the name."],
+    ["B2", "B2′ · attached", "Reads as a browser tab first. No gap, so no 'apart'."],
+    ["B3", "B3 · your tab, and one apart", "Your tab sits on the window; the agent's is lifted beside it."],
+  ];
+  const PALETTES = {
+    berry: { accent: "#C4307C", accentNight: "#EE6AAA", ink: "#241B2C", paper: "#FBF7F8", night: "#1B1620" },
+    leaf: { accent: "#74B83A", accentNight: "#8FD255", ink: "#19210F", paper: "#F6F9F0", night: "#151A10" },
+  };
+
+  function mark(id, size, colors) {
+    const svg = document.getElementById(`mark-${id}`).content.firstElementChild.cloneNode(true);
+    svg.setAttribute("width", size);
+    svg.setAttribute("height", size);
+    svg.style.setProperty("--ink", colors.ink);
+    svg.style.setProperty("--accent", colors.accent);
+    return svg;
+  }
+
+  function themed(p, dark) {
+    return dark ? { ink: p.paper, accent: p.accentNight } : { ink: p.ink, accent: p.accent };
+  }
+
+  function block(id, name) {
+    const p = PALETTES[name];
+    const frag = document.createDocumentFragment();
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = name;
+    frag.appendChild(label);
+    for (const dark of [false, true]) {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.style.background = dark ? p.night : p.paper;
+      const sizes = document.createElement("div");
+      sizes.className = "sizes";
+      for (const s of [96, 48, 32, 16]) sizes.appendChild(mark(id, s, themed(p, dark)));
+      const wm = document.createElement("div");
+      wm.className = "wm";
+      wm.style.color = dark ? p.paper : p.ink;
+      
+      wm.append(mark(id, 32, themed(p, dark)), "apart");
+      row.append(sizes, wm);
+      frag.appendChild(row);
+    }
+    for (const dark of [false, true]) {
+      const bar = document.createElement("div");
+      bar.className = "toolbar";
+      bar.style.background = dark ? "#35363A" : "#DEE1E6";
+      const omni = document.createElement("div");
+      omni.className = "omni";
+      omni.style.background = dark ? "#202124" : "#FFFFFF";
+      const a = document.createElement("i"); a.className = "ext";
+      const b = document.createElement("i"); b.className = "ext";
+      bar.append(omni, a, mark(id, 16, themed(p, dark)), b);
+      frag.appendChild(bar);
+    }
+    return frag;
+  }
+
+  const grid = document.getElementById("grid");
+  for (const [id, title, note] of MARKS) {
+    const card = document.createElement("section");
+    card.className = "card";
+    const h = document.createElement("h2"); h.textContent = title;
+    const d = document.createElement("p"); d.textContent = note;
+    const big = document.createElement("div"); big.className = "big";
+    for (const dark of [false, true]) {
+      const cell = document.createElement("div");
+      cell.style.background = dark ? PALETTES.berry.night : PALETTES.berry.paper;
+      cell.appendChild(mark(id, 140, themed(PALETTES.berry, dark)));
+      big.appendChild(cell);
+    }
+    card.append(h, d, big, block(id, "berry"));
+    grid.appendChild(card);
+  }
+</script>
+</body>
+</html>
