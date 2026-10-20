@@ -132,8 +132,10 @@ Each `repl` call is a fresh session. Variables do not persist between calls, and
 
 - `goto(url, { timeout })`, `reload()`, `goBack()`, `goForward()`, `url()`, `title()`, `content()`
 - `evaluate(fnOrString, ...args)` — in the page's main world; return JSON-serialisable values
-- `locator(css | "e12" | "[ref=e12]")`, `getByRole(role, { name, exact })`, `getByLabel(text)`, `getByText(text)`, `getByPlaceholder(text)`, `getByTestId(id)`
-- `fill`, `click`, `dblclick`, `type`, `press`, `check`, `uncheck`, `hover`, `focus`, `selectOption`, `textContent`, `innerText`, `innerHTML`, `inputValue`, `getAttribute`, `isVisible` — shortcuts taking a selector
+- `locator(css | "e12" | "f1e3" | "[ref=e12]")`, `getByRole(role, { name, exact })`, `getByLabel(text)`, `getByText(text)`, `getByPlaceholder(text)`, `getByTestId(id)`
+- `frameLocator(selector)` → `FrameLocator`, `frames()` → `[{ ref, name, url }]` — see [Frames](#frames)
+- `fill`, `click`, `dblclick`, `type`, `press`, `check`, `uncheck`, `hover`, `focus`, `selectOption`, `setInputFiles`, `textContent`, `innerText`, `innerHTML`, `inputValue`, `getAttribute`, `isVisible` — shortcuts taking a selector
+- `on(event, handler)`, `once(event, handler)`, `off(event, handler)`, `waitForEvent(event, { timeout, predicate })`, `waitForDownload()` — events are `"dialog"` and `"download"`, see [Dialogs](#dialogs) and [Downloads](#downloads)
 - `waitForSelector(sel, { state, timeout })`, `waitForURL(pattern)`, `waitForLoadState()`, `waitForFunction(fn)`, `waitForTimeout(ms)`
 - `screenshot({ path, type: "png" | "jpeg" | "webp", quality, fullPage, clip })` → `Buffer`
 - `pdf({ path, format, landscape, printBackground, margin, pageRanges })` → `Buffer`
@@ -142,9 +144,70 @@ Each `repl` call is a fresh session. Variables do not persist between calls, and
 
 **Locator**
 
-`click`, `dblclick`, `hover`, `focus`, `fill`, `clear`, `type`, `press`, `check`, `uncheck`, `selectOption`, `textContent`, `innerText`, `innerHTML`, `inputValue`, `getAttribute`, `isVisible`, `isHidden`, `isEnabled`, `isChecked`, `count`, `all`, `first`, `last`, `nth`, `boundingBox`, `evaluate(fn)`, `screenshot({ path, margin })`, `waitFor({ state, timeout })`, `scrollIntoViewIfNeeded`.
+`click`, `dblclick`, `hover`, `focus`, `fill`, `clear`, `type`, `press`, `check`, `uncheck`, `selectOption`, `setInputFiles(files)`, `textContent`, `innerText`, `innerHTML`, `inputValue`, `getAttribute`, `isVisible`, `isHidden`, `isEnabled`, `isChecked`, `count`, `all`, `first`, `last`, `nth`, `boundingBox`, `evaluate(fn)`, `screenshot({ path, margin })`, `waitFor({ state, timeout })`, `scrollIntoViewIfNeeded`.
 
-Relative paths given to `screenshot`, `pdf` and `fs` resolve inside the run directory (`pwd`). Nothing a script does can write outside it.
+**FrameLocator**
+
+`locator`, `getByRole`, `getByLabel`, `getByText`, `getByPlaceholder`, `getByTestId`, `frameLocator` (for a frame inside a frame), `first`, `last`, `nth`.
+
+Relative paths given to `screenshot`, `pdf`, `setInputFiles` and `fs` resolve inside the run directory (`pwd`). Nothing a script does can read or write outside it.
+
+### Frames
+
+Snapshots include the content of iframes, same-site and cross-site, nested up to four deep and up to 20 frames per snapshot. Elements inside a frame get refs with the frame's number in front, such as `f1e3`, and work like any other ref:
+
+```
+- button "Pay" [ref=e4]
+- iframe "Card details":
+  - textbox "Card number" [ref=f1e1]
+  - textbox "Expiry" [ref=f1e2]
+```
+
+```js
+await pg.locator("f1e1").fill("4242 4242 4242 4242");
+const card = pg.frameLocator('iframe[title="Card details"]');
+await card.getByLabel("Expiry").fill("12/30");
+await card.getByRole("button", { name: "Save" }).click();
+```
+
+`getByRole`, `getByText` and the other `pg.` locators search the top page only, as in Playwright; use `frameLocator` or a frame ref to reach inside a frame.
+
+### Dialogs
+
+`alert`, `confirm`, `prompt` and `beforeunload` dialogs are dismissed automatically unless the script handles them (`beforeunload` is accepted, so pages can be left). To answer them:
+
+```js
+pg.on("dialog", async (dialog) => {
+  console.log(dialog.type(), dialog.message());
+  if (dialog.type() === "prompt") await dialog.accept("my answer");
+  else await dialog.accept();
+});
+await pg.click("#delete");
+```
+
+A dialog has `type()`, `message()`, `defaultValue()`, `accept(promptText?)` and `dismiss()`. A dialog the handler leaves alone is dismissed when the handler returns. `waitForEvent("dialog")` only watches: it resolves once the dialog has been dismissed.
+
+### Uploads
+
+`setInputFiles` fills an `<input type="file">` with files from the run directory, or with files built in the script. Up to 50 MB per call.
+
+```js
+await fs.writeFile("report.csv", "name,total\nada,3\n");
+await pg.setInputFiles("#attachment", "report.csv");
+await pg.getByLabel("Photos").setInputFiles([{ name: "a.png", mimeType: "image/png", buffer: pngBytes }]);
+```
+
+### Downloads
+
+Files a page downloads are saved to `downloads/` in the run directory.
+
+```js
+const [download] = await Promise.all([pg.waitForEvent("download"), pg.click("text=Export")]);
+console.log(download.suggestedFilename(), await download.path());
+await download.saveAs("export.csv");
+```
+
+A download has `url()`, `suggestedFilename()`, `path()` (resolves when it has finished), `saveAs(path)` and `failure()`. In headless runs the file goes straight to the run directory. In your Chrome, Chrome saves it as usual, to your downloads folder, and apart copies it into the run directory; if Chrome is set to ask where to save each file, you will see that question.
 
 ## Security model
 
@@ -161,10 +224,10 @@ apart assumes the person, or agent, writing scripts is trusted, and that web pag
 
 ## Limitations
 
-- Main frame only: locators and snapshots do not descend into iframes. Use `page._sendToTarget` with `Target.*` commands if you need a frame.
-- No dialog handling beyond auto-dismissing alerts and confirms, and no file-chooser or download helpers yet.
-- Pages that block the DevTools Protocol (`chrome://`, the Web Store, other extensions) cannot be attached.
-- Chrome shows the debugging bar while a tab is attached.
+- In your Chrome, apart cannot open or control `chrome://` pages, the Chrome Web Store or other extensions' pages: Chrome does not let extensions debug them. Headless runs can, so use `--headless` for those.
+- In your Chrome, Chrome shows an "apart started debugging this browser" bar while a script runs. Chrome shows it for every extension that uses the debugger, and only a Chrome launch flag hides it. Headless runs show nothing.
+- Frames: snapshots go four frames deep and include up to 20 frames; deeper or extra frames are left out.
+- Uploads fill file inputs directly. A site that opens a file picker without a file input (some drag-and-drop widgets) cannot be given a file yet.
 
 ## Development
 

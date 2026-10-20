@@ -3,6 +3,7 @@ import type { ExtRequestMethod, TabInfo } from "../shared/protocol";
 export interface TabEvent {
   method: string;
   params: unknown;
+  sessionId?: string;
 }
 
 export interface BrowserBackend {

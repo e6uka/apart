@@ -18,17 +18,20 @@ Everything the developer dashboard asks for, ready to paste. Upload `dist/store/
 
 > apart lets scripts and coding agents in your terminal use your real Chrome: the one you are already signed in to.
 >
-> You install the free, open source apart command line tool, then run a Playwright-style script with `apart repl`. This extension receives those commands from apart on your computer, opens tabs in a pink "apart" tab group, works in them and reports back. When the script ends, its tabs close.
+> You install the free, open source apart command line tool, then run a Playwright-style script with `apart repl`. This extension receives those commands from apart on your computer, opens tabs in a pink "apart" tab group, works in them and reports back: what the page says, what changed, screenshots and PDFs. Scripts can fill forms, reach inside embedded frames, answer dialogs, upload files and save downloads. When the script ends, its tabs close.
+>
+> apart can also run scripts in a hidden headless Chrome of its own. You choose which one runs by default, and every run from both shows up in this extension's activity log.
 >
 > What you get in the browser:
 > • A toolbar popup that shows whether your terminal can reach Chrome, with the command to run when it cannot.
-> • An activity log of every run, the pages it opened and any error, with search and filters.
-> • A settings page with the connection details and a setup checklist.
+> • An activity log of every run, the pages it opened, whether it ran in your Chrome or headless, and any error, with search and filters.
+> • A settings page with the connection details, the default browser and a setup checklist.
 >
 > What it will not do:
 > • It never talks to any server. It only connects to apart on your own computer (127.0.0.1).
 > • It only touches tabs a script opened, or a tab you hand to a script on purpose.
 > • It does not read or export your cookies or passwords.
+> • It only looks at downloads that finish while a script is running.
 >
 > Chrome shows "apart started debugging this browser" while a script runs. That is Chrome's standard notice for extensions that use the debugger.
 >
@@ -61,6 +64,7 @@ Everything the developer dashboard asks for, ready to paste. Upload `dist/store/
 | `tabGroups` | To put tabs apart opens in a labelled "apart" group, so the user can tell them apart from their own tabs. |
 | `alarms` | To reconnect to the apart program on the user's computer after Chrome suspends the service worker. |
 | `storage` | To keep the user's port setting and the local history of recent runs shown in the activity log. |
+| `downloads` | When a script the user runs downloads a file, to find where Chrome saved it so the apart program on the user's computer can copy it into that run's folder. Only downloads that finish while a script is running are looked at, and nothing is sent anywhere else. |
 
 **Remote code:**
 
@@ -70,6 +74,8 @@ Everything the developer dashboard asks for, ready to paste. Upload `dist/store/
 
 - **Website content:** page text and screenshots are passed to the apart program on the user's computer, for the script the user ran.
 - **Web history:** the activity log keeps the addresses of pages each run visited, without query strings or fragments, in local extension storage.
+
+Downloaded files a script triggers stay on the user's computer: Chrome saves them as usual, and the extension tells the apart program where, so it can copy them into that run's folder. That is covered by Website content.
 
 Then tick all three certifications: not sold to third parties, not used for purposes unrelated to the single purpose, not used for creditworthiness or lending.
 
@@ -83,10 +89,10 @@ Then tick all three certifications: not sold to third parties, not used for purp
 
 ## What to expect in review
 
-- `debugger` triggers a manual, in-depth review. Expect several days, sometimes a few weeks.
+- `debugger` triggers a manual, in-depth review. Expect several days, sometimes a few weeks. `downloads` is a second sensitive permission; the justification above explains why it is needed.
 - Reviewers may ask how to test it. Answer in the "Notes for reviewer" field:
 
-  > The extension does nothing on its own; it needs the open source apart command line tool. To test: install Node.js 22, run `git clone https://github.com/e6uka/apart && cd apart && ./install.sh && apart doctor`, then `apart repl 'const pg = await openTab("https://example.com"); console.log(await pg.title()); await closeTab(pg);'`. A tab opens in a pink "apart" group, the title prints in the terminal, and the run appears in the extension's Activity page.
+  > The extension does nothing on its own; it needs the open source apart command line tool. To test: install Node.js 22, run `git clone https://github.com/e6uka/apart && cd apart && ./install.sh --browser=chrome && apart doctor`, then `apart repl --chrome 'const pg = await openTab("https://example.com"); console.log(await pg.title()); await closeTab(pg);'`. A tab opens in a pink "apart" group, the title prints in the terminal, and the run appears in the extension's Activity page. To check the downloads permission: `apart repl --chrome 'const pg = await openTab("https://example.com"); await pg.evaluate(() => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["hello"])); a.download = "hello.txt"; a.id = "dl"; a.textContent = "Download"; document.body.append(a); }); const [d] = await Promise.all([pg.waitForEvent("download"), pg.click("#dl")]); console.log(await d.path()); await closeTab(pg);'`. Chrome saves hello.txt to the downloads folder and the terminal prints the copy in the run folder.
 
 ## After the first upload
 

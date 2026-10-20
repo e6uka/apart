@@ -1,6 +1,6 @@
 import { computeAccessibleName } from "dom-accessibility-api";
 
-type SnapshotOptions = { interactive?: boolean; maxTextLength?: number; maxEntries?: number };
+type SnapshotOptions = { interactive?: boolean; maxTextLength?: number; maxEntries?: number; refPrefix?: string };
 type FindKind = "css" | "ref" | "role" | "label" | "text" | "placeholder";
 type TextMatcher = string | { regex: string; flags: string } | null | undefined;
 type FindArg = { selector?: string; ref?: string; role?: string; name?: TextMatcher; text?: TextMatcher; exact?: boolean };
@@ -32,6 +32,12 @@ const ANNOTATION_ID = "__apart_annotations__";
 
 let entries: Entry[] = [];
 const refs = new Map<string, Element>();
+let frameKeys = new WeakMap<Element, string>();
+const FRAME_TAGS = new Set(["iframe", "frame"]);
+
+function markFrame(el: Element, key: string): void {
+  frameKeys.set(el, key);
+}
 
 function isVisible(el: Element): boolean {
   if (el.getAttribute("aria-hidden") === "true") return false;
@@ -133,6 +139,14 @@ function childNodesOf(el: Element): Node[] {
   return nodes;
 }
 
+function frameNode(el: Element, opts: Required<SnapshotOptions>): TreeNode[] {
+  const key = frameKeys.get(el);
+  if (!key || !isVisible(el)) return [];
+  const name = nameOf(el);
+  const line = `iframe${name ? ` ${quote(truncate(name, opts.maxTextLength))}` : ""}`;
+  return [{ line, keep: true, children: [{ line: `@@frame:${key}@@`, keep: true, children: [] }] }];
+}
+
 function build(node: Node, opts: Required<SnapshotOptions>, state: { count: number; refCounter: number; truncated: boolean }): TreeNode[] {
   if (state.truncated) return [];
   if (node.nodeType === Node.TEXT_NODE) {
@@ -143,6 +157,7 @@ function build(node: Node, opts: Required<SnapshotOptions>, state: { count: numb
   if (node.nodeType !== Node.ELEMENT_NODE) return [];
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
+  if (FRAME_TAGS.has(tag)) return frameNode(el, opts);
   if (SKIP_TAGS.has(tag)) return [];
   if (!isVisible(el)) return [];
   const role = roleOf(el);
@@ -158,7 +173,7 @@ function build(node: Node, opts: Required<SnapshotOptions>, state: { count: numb
   const name = role === "generic" ? "" : nameOf(el);
   let ref: string | null = null;
   if (interactive) {
-    ref = `e${++state.refCounter}`;
+    ref = `${opts.refPrefix}${++state.refCounter}`;
     refs.set(ref, el);
     entries.push({ ref, role, name, element: el });
   }
@@ -197,11 +212,13 @@ function snapshot(options: SnapshotOptions = {}): { tree: string; fullTree: stri
     interactive: false,
     maxTextLength: options.maxTextLength ?? 200,
     maxEntries: options.maxEntries ?? 1500,
+    refPrefix: options.refPrefix ?? "e",
   };
   entries = [];
   refs.clear();
   const state = { count: 0, refCounter: 0, truncated: false };
   const nodes = build(document.documentElement, full, state);
+  frameKeys = new WeakMap();
   const fullOut: string[] = [];
   serialize(nodes, full, 0, fullOut);
   const fullTree = fullOut.join("\n");
@@ -235,8 +252,8 @@ function candidates(kind: FindKind, arg: FindArg): Element[] {
     }
     case "css": {
       const selector = (arg.selector ?? "").trim();
-      const refMatch = selector.match(/^\[ref=([^\]]+)\]$/) ?? selector.match(/^(f\d+)?(e\d+)$/);
-      if (refMatch) return candidates("ref", { ref: refMatch[refMatch.length - 1] });
+      const refMatch = selector.match(/^\[ref=([^\]]+)\]$/) ?? selector.match(/^((?:f\d+)?e\d+)$/);
+      if (refMatch) return candidates("ref", { ref: refMatch[1] });
       return Array.from(document.querySelectorAll(selector));
     }
     case "role": {
@@ -317,7 +334,7 @@ function unannotate(): void {
   document.getElementById(ANNOTATION_ID)?.remove();
 }
 
-const api = { snapshot, find, countOf, visible: isVisible, describe, annotate, unannotate, refCount: () => refs.size };
+const api = { snapshot, find, countOf, visible: isVisible, describe, annotate, unannotate, markFrame, refCount: () => refs.size };
 
 (globalThis as unknown as { __apart: typeof api }).__apart = api;
 

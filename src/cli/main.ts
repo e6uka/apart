@@ -39,8 +39,9 @@ Script globals:
   attachActiveBrowserTab(), getTabByTargetId(id), snapshot(page, { interactive }) -> { tree, diff },
   annotatedScreenshot(page) -> { base64Image }, page.screenshot({ path, type, quality, fullPage }),
   page.pdf({ path, format }), page.locator(sel) / getByRole / getByLabel / getByText, page.evaluate(fn),
-  page._sendToTarget(method, params), fetch(url) (with the page's cookies), fs, path, pwd, Buffer,
-  sleep(ms), console.log(...)
+  page.frameLocator(sel), page.frames(), page.setInputFiles(sel, files), page.on("dialog", fn),
+  page.waitForEvent("download") -> { path(), saveAs(p) }, page._sendToTarget(method, params),
+  fetch(url) (with the page's cookies), fs, path, pwd, Buffer, sleep(ms), console.log(...)
 
 Relative artifact paths resolve inside the per-run directory printed by console.log(pwd).
 Output ends with "[ok <seconds>s]" or "[error <message>]".`;

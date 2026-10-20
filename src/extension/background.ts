@@ -1,4 +1,4 @@
-import { DEFAULT_PORT, PROTOCOL_VERSION, mergeRuns, type DaemonToExt, type ExtRequest, type ExtToDaemon, type RunBrowser, type RunRecord, type TabInfo } from "../shared/protocol";
+import { DEFAULT_PORT, PROTOCOL_VERSION, mergeRuns, type CompletedDownload, type DaemonToExt, type ExtRequest, type ExtToDaemon, type RunBrowser, type RunRecord, type TabInfo } from "../shared/protocol";
 
 const ALARM_NAME = "apart-reconnect";
 const GROUP_TITLE = "apart";
@@ -11,6 +11,48 @@ let retryAttempt = 0;
 const RETRY_DELAYS_MS = [1000, 2000, 3000, 5000, 8000, 13000, 20000];
 const attachedTabs = new Set<number>();
 const createdTabs = new Set<number>();
+const RECENT_DOWNLOAD_MS = 120000;
+const recentDownloads: { at: number; urls: string[]; result: CompletedDownload | { error: string } }[] = [];
+const downloadWaiters = new Set<{ url: string; settle: (result: CompletedDownload | { error: string }) => void }>();
+
+function downloadResult(item: chrome.downloads.DownloadItem): CompletedDownload | { error: string } {
+  if (item.state === "interrupted") return { error: `Download failed: ${item.error ?? "interrupted"}` };
+  return { path: item.filename, url: item.finalUrl || item.url, mimeType: item.mime, bytes: item.fileSize };
+}
+
+function finishDownload(item: chrome.downloads.DownloadItem): void {
+  if (attachedTabs.size === 0) return;
+  const urls = [item.url, item.finalUrl].filter(Boolean);
+  const result = downloadResult(item);
+  const now = Date.now();
+  while (recentDownloads.length && now - recentDownloads[0].at > RECENT_DOWNLOAD_MS) recentDownloads.shift();
+  recentDownloads.push({ at: now, urls, result });
+  for (const waiter of Array.from(downloadWaiters)) {
+    if (!urls.includes(waiter.url)) continue;
+    downloadWaiters.delete(waiter);
+    waiter.settle(result);
+  }
+}
+
+function expectDownload(url: string, timeoutMs: number): Promise<CompletedDownload> {
+  const done = recentDownloads.find((entry) => entry.urls.includes(url));
+  const unwrap = (result: CompletedDownload | { error: string }) => {
+    if ("error" in result) throw new Error(result.error);
+    return result;
+  };
+  if (done) {
+    recentDownloads.splice(recentDownloads.indexOf(done), 1);
+    return Promise.resolve(done.result).then(unwrap);
+  }
+  return new Promise<CompletedDownload | { error: string }>((resolve) => {
+    const waiter = { url, settle: (result: CompletedDownload | { error: string }) => { clearTimeout(timer); resolve(result); } };
+    const timer = setTimeout(() => {
+      downloadWaiters.delete(waiter);
+      resolve({ error: `Download of ${url} did not finish within ${Math.round(timeoutMs / 1000)}s` });
+    }, timeoutMs);
+    downloadWaiters.add(waiter);
+  }).then(unwrap);
+}
 
 async function getPort(): Promise<number> {
   const { port } = await chrome.storage.local.get("port");
@@ -128,8 +170,16 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
     case "debugger.detach":
       await detachTab(Number(params.tabId));
       return true;
-    case "debugger.send":
-      return chrome.debugger.sendCommand({ tabId: Number(params.tabId) }, String(params.method), params.params ?? {});
+    case "debugger.send": {
+      const target: chrome.debugger.DebuggerSession = typeof params.sessionId === "string" ? { tabId: Number(params.tabId), sessionId: params.sessionId } : { tabId: Number(params.tabId) };
+      return chrome.debugger.sendCommand(target, String(params.method), params.params ?? {});
+    }
+    case "downloads.enable":
+      if (!chrome.downloads) throw new Error("Reload the apart extension in chrome://extensions so it can save downloads.");
+      return { mode: "relay" };
+    case "downloads.expect":
+      if (!chrome.downloads) throw new Error("Reload the apart extension in chrome://extensions so it can save downloads.");
+      return expectDownload(String(params.url), Number(params.timeoutMs) || 600000);
     default:
       throw new Error(`Unsupported method: ${String(request.method)}`);
   }
@@ -257,7 +307,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 chrome.debugger.onEvent.addListener((source, method, params) => {
-  if (source.tabId !== undefined) send({ type: "event", tabId: source.tabId, method, params });
+  if (source.tabId !== undefined) send({ type: "event", tabId: source.tabId, ...(source.sessionId ? { sessionId: source.sessionId } : {}), method, params });
+});
+chrome.downloads?.onChanged.addListener((delta) => {
+  if (delta.state?.current !== "complete" && delta.state?.current !== "interrupted") return;
+  void chrome.downloads.search({ id: delta.id }).then(([item]) => {
+    if (item) finishDownload(item);
+  });
 });
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (source.tabId === undefined) return;

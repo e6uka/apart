@@ -76,6 +76,8 @@ export class HeadlessBrowser extends EventEmitter implements BrowserBackend {
   private byTarget = new Map<string, Target>();
   private byTab = new Map<number, Target>();
   private bySession = new Map<string, Target>();
+  private childSessions = new Map<string, Target>();
+  private downloadDir: string | null = null;
   private idleTimer: NodeJS.Timeout | null = null;
   private users = 0;
   private stderrTail = "";
@@ -146,6 +148,7 @@ export class HeadlessBrowser extends EventEmitter implements BrowserBackend {
         const target = this.byTab.get(Number(params.tabId));
         if (target?.sessionId) {
           const sessionId = target.sessionId;
+          for (const [child, owner] of this.childSessions) if (owner === target) this.childSessions.delete(child);
           this.bySession.delete(sessionId);
           target.sessionId = null;
           await this.call("Target.detachFromTarget", { sessionId }).catch(() => undefined);
@@ -155,8 +158,20 @@ export class HeadlessBrowser extends EventEmitter implements BrowserBackend {
       case "debugger.send": {
         const target = this.require(params.tabId);
         if (!target.sessionId) throw new Error(`Tab ${target.tabId} is not attached`);
-        return this.call<T>(String(params.method), (params.params ?? {}) as Record<string, unknown>, target.sessionId, timeoutMs);
+        const child = typeof params.sessionId === "string" ? params.sessionId : null;
+        if (child && this.childSessions.get(child) !== target) throw new Error(`Frame session ${child} is gone`);
+        return this.call<T>(String(params.method), (params.params ?? {}) as Record<string, unknown>, child ?? target.sessionId, timeoutMs);
       }
+      case "downloads.enable": {
+        const downloadPath = String(params.downloadPath);
+        if (this.downloadDir !== downloadPath) {
+          await this.call("Browser.setDownloadBehavior", { behavior: "allowAndName", downloadPath, eventsEnabled: true });
+          this.downloadDir = downloadPath;
+        }
+        return { mode: "direct", downloadPath } as T;
+      }
+      case "downloads.expect":
+        throw new Error("Headless downloads are saved directly; downloads.expect is only for the extension");
       default:
         throw new Error(`Unsupported method: ${String(method)}`);
     }
@@ -286,11 +301,22 @@ export class HeadlessBrowser extends EventEmitter implements BrowserBackend {
       return;
     }
     if (message.sessionId) {
-      const target = this.bySession.get(message.sessionId);
-      if (target && message.method) this.emit(`tab:${target.tabId}`, { method: message.method, params: message.params });
+      const top = this.bySession.get(message.sessionId);
+      const target = top ?? this.childSessions.get(message.sessionId);
+      if (!target || !message.method) return;
+      const params = message.params ?? {};
+      if (message.method === "Target.attachedToTarget" && typeof params.sessionId === "string") this.childSessions.set(params.sessionId, target);
+      else if (message.method === "Target.detachedFromTarget" && typeof params.sessionId === "string") this.childSessions.delete(params.sessionId);
+      this.emit(`tab:${target.tabId}`, { method: message.method, params: message.params, ...(top ? {} : { sessionId: message.sessionId }) });
       return;
     }
     const params = message.params ?? {};
+    if (message.method === "Browser.downloadWillBegin" || message.method === "Browser.downloadProgress") {
+      const owner = typeof params.frameId === "string" ? this.byTarget.get(params.frameId) : undefined;
+      const receivers = owner?.sessionId ? [owner] : Array.from(this.byTarget.values()).filter((target) => target.sessionId);
+      for (const target of receivers) this.emit(`tab:${target.tabId}`, { method: message.method, params });
+      return;
+    }
     if (message.method === "Target.targetInfoChanged") {
       const target = this.byTarget.get(params.targetInfo?.targetId);
       if (target) {
@@ -319,12 +345,15 @@ export class HeadlessBrowser extends EventEmitter implements BrowserBackend {
       pending.reject(new Error("Headless Chrome exited"));
     }
     this.pending.clear();
+    this.childSessions.clear();
+    this.downloadDir = null;
     for (const target of Array.from(this.byTarget.values())) this.forget(target);
     this.nextTabId = 1;
     this.options.log?.("headless Chrome stopped");
   }
 
   private forget(target: Target): void {
+    for (const [sessionId, owner] of this.childSessions) if (owner === target) this.childSessions.delete(sessionId);
     this.byTarget.delete(target.targetId);
     this.byTab.delete(target.tabId);
     if (target.sessionId) {

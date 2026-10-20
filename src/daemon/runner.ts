@@ -71,7 +71,7 @@ class Session {
   page: Page | null = null;
   aborted = false;
 
-  constructor(private readonly bridge: BrowserBackend, private readonly runDir: string) {}
+  constructor(private readonly bridge: BrowserBackend, private readonly runDir: string, private readonly log: (text: string) => void = () => undefined) {}
 
   async openTab(url = "about:blank"): Promise<Page> {
     this.assertActive();
@@ -128,7 +128,7 @@ class Session {
   }
 
   private async attach(tabId: number, ownership: Ownership, url: string): Promise<Page> {
-    const page = await Page.attach(this.bridge, tabId, ownership, this.runDir, url, (visited) => this.recordVisit(visited));
+    const page = await Page.attach(this.bridge, tabId, ownership, this.runDir, url, (visited) => this.recordVisit(visited), this.log);
     this.tabs.push(page);
     this.page = page;
     return page;
@@ -146,7 +146,8 @@ class Session {
 
 export async function runScript(options: RunOptions): Promise<RunResult> {
   const started = Date.now();
-  const session = new Session(options.bridge, options.runDir);
+  let emitLine: (text: string) => void = () => undefined;
+  const session = new Session(options.bridge, options.runDir, (text) => emitLine(text));
   const confinedFs = createConfinedFs(options.runDir);
   const timers = new Set<NodeJS.Timeout>();
   const abort = new AbortController();
@@ -166,6 +167,7 @@ export async function runScript(options: RunOptions): Promise<RunResult> {
     }
     options.emit(text);
   };
+  emitLine = (text) => print(text);
 
   const trackedTimer = <F extends typeof setTimeout | typeof setInterval>(factory: F) =>
     (handler: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {

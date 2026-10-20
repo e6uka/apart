@@ -170,7 +170,7 @@ export class ExtensionBridge extends EventEmitter implements BrowserBackend {
     }
     if (message.type === "clear-history") this.emit("clear-history", message.before);
     else if (message.type === "set-default-browser") this.emit("set-default-browser", message.browser);
-    else if (message.type === "event") this.emit(`tab:${message.tabId}`, { method: message.method, params: message.params });
+    else if (message.type === "event") this.emit(`tab:${message.tabId}`, { method: message.method, params: message.params, sessionId: message.sessionId });
     else if (message.type === "detached") this.emit(`tab:${message.tabId}`, { method: "__detached", params: { reason: message.reason } });
   }
 
