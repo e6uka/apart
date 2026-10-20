@@ -1,0 +1,309 @@
+import { spawn } from "node:child_process";
+import { existsSync, openSync } from "node:fs";
+import fs from "node:fs/promises";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { APART_HOME, LOG_DIR, SOCKET_PATH } from "../shared/paths";
+import { DEFAULT_PORT, allowedExtensionIds, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
+
+declare const __APART_VERSION__: string;
+
+const VERSION = typeof __APART_VERSION__ === "string" ? __APART_VERSION__ : "dev";
+const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const DIST_DIR = path.dirname(SCRIPT_PATH);
+const EXTENSION_DIR = path.join(DIST_DIR, "extension");
+const DAEMON_START_TIMEOUT_MS = 8000;
+
+const HELP = `apart ${VERSION} — drive your real, signed-in Chrome from the terminal
+
+Usage:
+  apart repl '<javascript>'        Run a Playwright-style script against Chrome (exit code is always 0)
+  apart repl --file script.js      Read the script from a file ("-" reads stdin)
+  apart repl ... --timeout <ms>    Script time budget (default 120000, max 600000)
+  apart daemon start|stop|status   Manage the background daemon (started on demand by repl)
+  apart doctor                     Check Node, the build, the daemon, the extension and the shims
+  apart extension-path             Print the unpacked extension directory to load in Chrome
+  apart skills list                Lists skills (apart ships none)
+  apart exec '<task>'              Not supported: apart has no autonomous agent, use repl
+
+Script globals:
+  page, tabs, openTab(url), closeTab(page), listBrowserTabs(), attachBrowserTab(targetId),
+  attachActiveBrowserTab(), getTabByTargetId(id), snapshot(page, { interactive }) -> { tree, diff },
+  annotatedScreenshot(page) -> { base64Image }, page.screenshot({ path, type, quality, fullPage }),
+  page.pdf({ path, format }), page.locator(sel) / getByRole / getByLabel / getByText, page.evaluate(fn),
+  page._sendToTarget(method, params), fetch(url) (with the page's cookies), fs, path, pwd, Buffer,
+  sleep(ms), console.log(...)
+
+Relative artifact paths resolve inside the per-run directory printed by console.log(pwd).
+Output ends with "[ok <seconds>s]" or "[error <message>]".`;
+
+function parseFlags(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
+  const positional: string[] = [];
+  const flags = new Map<string, string | true>();
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith("--")) {
+      const [name, inline] = arg.slice(2).split("=", 2);
+      if (inline !== undefined) flags.set(name, inline);
+      else if (["file", "timeout", "port"].includes(name) && i + 1 < args.length) flags.set(name, args[++i]);
+      else flags.set(name, true);
+    } else positional.push(arg);
+  }
+  return { positional, flags };
+}
+
+function connectSocket(): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(SOCKET_PATH);
+    socket.once("connect", () => resolve(socket));
+    socket.once("error", reject);
+  });
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function spawnDaemon(port: number): Promise<void> {
+  await fs.mkdir(LOG_DIR, { recursive: true });
+  const logFile = openSync(path.join(LOG_DIR, "daemon.log"), "a");
+  const child = spawn(process.execPath, [SCRIPT_PATH, "daemon", "run", "--port", String(port)], {
+    detached: true,
+    stdio: ["ignore", logFile, logFile],
+    env: process.env,
+  });
+  child.unref();
+}
+
+async function ensureDaemon(port: number): Promise<net.Socket> {
+  try {
+    return await connectSocket();
+  } catch {
+    await spawnDaemon(port);
+  }
+  const deadline = Date.now() + DAEMON_START_TIMEOUT_MS;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      return await connectSocket();
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  const logPath = path.join(LOG_DIR, "daemon.log");
+  const lastLine = (await fs.readFile(logPath, "utf8").catch(() => "")).trim().split("\n").pop() ?? "";
+  const failure = lastLine.match(/startup failed: (.*)$/)?.[1];
+  if (failure) throw new Error(`the daemon could not start: ${failure}`);
+  throw new Error(`daemon did not start within ${DAEMON_START_TIMEOUT_MS / 1000}s (${lastError instanceof Error ? lastError.message : String(lastError)}); see ${logPath}`);
+}
+
+function talk(socket: net.Socket, request: CliRequest, onMessage: (message: CliMessage) => boolean | void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk: string) => {
+      buffer += chunk;
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+        if (!line) continue;
+        if (onMessage(JSON.parse(line) as CliMessage) === true) {
+          socket.end();
+          resolve();
+          return;
+        }
+      }
+    });
+    socket.on("error", reject);
+    socket.on("close", () => resolve());
+    socket.write(`${JSON.stringify(request)}\n`);
+  });
+}
+
+async function daemonStatus(): Promise<DaemonStatus | null> {
+  let socket: net.Socket;
+  try {
+    socket = await connectSocket();
+  } catch {
+    return null;
+  }
+  let status: DaemonStatus | null = null;
+  await talk(socket, { type: "status" }, (message) => {
+    if (message.type === "status") {
+      status = message;
+      return true;
+    }
+  });
+  return status;
+}
+
+async function commandRepl(positional: string[], flags: Map<string, string | true>): Promise<void> {
+  const port = Number(flags.get("port") ?? DEFAULT_PORT);
+  const file = flags.get("file");
+  let code: string | undefined;
+  if (typeof file === "string") code = file === "-" ? await readStdin() : await fs.readFile(file, "utf8");
+  else if (positional.length > 0) code = positional.join(" ");
+  else if (!process.stdin.isTTY) code = await readStdin();
+  if (!code || !code.trim()) {
+    console.log("[error no script given: apart repl '<javascript>' or apart repl --file script.js]");
+    return;
+  }
+  const timeoutMs = flags.has("timeout") ? Number(flags.get("timeout")) : undefined;
+  let socket: net.Socket;
+  try {
+    socket = await ensureDaemon(port);
+  } catch (error) {
+    console.log(`[error ${error instanceof Error ? error.message : String(error)}]`);
+    return;
+  }
+  await talk(socket, { type: "run", code, timeoutMs }, (message) => {
+    if (message.type === "out") process.stdout.write(`${message.text}\n`);
+    else if (message.type === "done") {
+      process.stdout.write(message.ok ? `[ok ${(message.elapsedMs / 1000).toFixed(1)}s]\n` : `[error ${message.error}]\n`);
+      return true;
+    }
+  });
+}
+
+async function commandDaemon(positional: string[], flags: Map<string, string | true>): Promise<number> {
+  const port = Number(flags.get("port") ?? DEFAULT_PORT);
+  const action = positional[0] ?? "status";
+  if (action === "run") {
+    const { runDaemon } = await import("../daemon/index");
+    await runDaemon({ port, version: VERSION });
+    return new Promise<number>(() => undefined);
+  }
+  if (action === "start") {
+    const existing = await daemonStatus();
+    if (existing) {
+      console.log(`daemon already running (pid ${existing.pid}, port ${existing.port})`);
+      return 0;
+    }
+    await ensureDaemon(port);
+    const status = await daemonStatus();
+    console.log(status ? `daemon started (pid ${status.pid}, port ${status.port})` : "daemon started");
+    return 0;
+  }
+  if (action === "stop") {
+    let socket: net.Socket;
+    try {
+      socket = await connectSocket();
+    } catch {
+      console.log("daemon is not running");
+      return 0;
+    }
+    await talk(socket, { type: "stop" }, (message) => message.type === "stopping");
+    console.log("daemon stopped");
+    return 0;
+  }
+  if (action === "restart") {
+    await commandDaemon(["stop"], flags);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return commandDaemon(["start"], flags);
+  }
+  const status = await daemonStatus();
+  if (!status) {
+    console.log("daemon: not running");
+    return 1;
+  }
+  console.log(`daemon: running (pid ${status.pid}, port ${status.port}, up ${Math.round(status.uptimeMs / 1000)}s${status.running ? ", script running" : ""})`);
+  console.log(`extension: ${status.extensionConnected ? `connected (version ${status.extensionVersion})` : "not connected"}`);
+  return status.extensionConnected ? 0 : 1;
+}
+
+async function commandDoctor(flags: Map<string, string | true>): Promise<number> {
+  const port = Number(flags.get("port") ?? DEFAULT_PORT);
+  const lines: string[] = [];
+  let problems = 0;
+  const check = (ok: boolean, label: string, fix?: string) => {
+    lines.push(`${ok ? "ok      " : "problem "} ${label}${!ok && fix ? `\n         → ${fix}` : ""}`);
+    if (!ok) problems++;
+  };
+  const major = Number(process.versions.node.split(".")[0]);
+  check(major >= 22, `node ${process.versions.node}`, "install Node 22 or newer");
+  check(existsSync(path.join(DIST_DIR, "injected", "snapshot.js")) && existsSync(path.join(EXTENSION_DIR, "manifest.json")), `build at ${DIST_DIR}`, "run `yarn build`");
+  const binDir = path.join(os.homedir(), ".local", "bin");
+  const self = await fs.realpath(SCRIPT_PATH).catch(() => SCRIPT_PATH);
+  const apartLink = path.join(binDir, "apart");
+  check((await fs.realpath(apartLink).catch(() => null)) === self, `${apartLink} → this build`, "run ./install.sh");
+  const gstackLink = path.join(binDir, "aside");
+  const gstackTarget = await fs.realpath(gstackLink).catch(() => null);
+  if (gstackTarget === self) lines.push(`ok       ${gstackLink} → this build (gstack browser skills)`);
+  else if (gstackTarget === null) lines.push(`info     gstack link not installed (optional: ./install.sh --gstack)`);
+  else lines.push(`info     ${gstackLink} belongs to another program, so gstack will not use apart`);
+  if (!(process.env.PATH ?? "").split(path.delimiter).includes(binDir)) {
+    lines.push(`info     ${binDir} is not on PATH; call ${apartLink} directly or add the directory to PATH`);
+  }
+  const chrome = ["/Applications/Google Chrome.app", "/Applications/Chromium.app", "/Applications/Google Chrome Canary.app"].find((app) => existsSync(app));
+  check(Boolean(chrome) || process.platform !== "darwin", chrome ? `Chrome at ${chrome}` : "Chrome installed", "install Google Chrome or Chromium");
+  let status = await daemonStatus();
+  if (!status) {
+    try {
+      await ensureDaemon(port);
+      status = await daemonStatus();
+    } catch (error) {
+      lines.push(`problem  daemon could not start: ${error instanceof Error ? error.message : String(error)}`);
+      problems++;
+    }
+  }
+  if (status) {
+    check(true, `daemon running (pid ${status.pid}, port ${status.port})`);
+    check(status.extensionConnected, status.extensionConnected ? `extension connected (version ${status.extensionVersion})` : "extension not connected",
+      `in Chrome open chrome://extensions, turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`);
+  }
+  console.log(lines.join("\n"));
+  console.log(problems === 0 ? "\nAll good. Try: apart repl 'const pg = await openTab(\"https://example.com\"); console.log(await pg.title()); await closeTab(pg);'" : `\n${problems} problem${problems === 1 ? "" : "s"} found.`);
+  return problems === 0 ? 0 : 1;
+}
+
+async function main(): Promise<number> {
+  const { positional, flags } = parseFlags(process.argv.slice(2));
+  const command = positional.shift();
+  if (flags.has("version") || command === "version") {
+    console.log(VERSION);
+    return 0;
+  }
+  if (!command || command === "help" || flags.has("help")) {
+    console.log(HELP);
+    return 0;
+  }
+  switch (command) {
+    case "repl":
+      await commandRepl(positional, flags);
+      return 0;
+    case "exec":
+      console.log("[error apart has no autonomous agent; write the steps with `apart repl` instead]");
+      return 0;
+    case "skills":
+      console.log("No skills are installed. apart has no skill runtime; drive pages with `apart repl`.");
+      return 0;
+    case "daemon":
+      return commandDaemon(positional, flags);
+    case "doctor":
+      return commandDoctor(flags);
+    case "extension-path":
+      console.log(EXTENSION_DIR);
+      return 0;
+    case "home":
+      console.log(APART_HOME);
+      return 0;
+    default:
+      console.error(`Unknown command: ${command}\n\n${HELP}`);
+      return 2;
+  }
+}
+
+main().then(
+  (code) => process.exit(code),
+  (error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  },
+);
