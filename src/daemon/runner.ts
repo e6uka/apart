@@ -11,6 +11,7 @@ export interface RunOptions {
   runDir: string;
   timeoutMs: number;
   bridge: BrowserBackend;
+  keepTabs?: boolean;
   emit: (text: string) => void;
 }
 
@@ -120,9 +121,9 @@ class Session {
     return this.tabs.find((tab) => tab.targetId === String(targetId));
   }
 
-  async cleanup(): Promise<void> {
+  async cleanup(keepTabs = false): Promise<void> {
     this.aborted = true;
-    await Promise.allSettled(this.tabs.map((tab) => tab.close()));
+    await Promise.allSettled(this.tabs.map((tab) => (keepTabs && tab.ownership === "owned" ? tab.leaveOpen() : tab.close())));
     this.tabs.length = 0;
     this.page = null;
   }
@@ -261,7 +262,7 @@ export async function runScript(options: RunOptions): Promise<RunResult> {
     if (timer) clearTimeout(timer);
     abort.abort();
     for (const pending of timers) clearTimeout(pending);
-    await session.cleanup();
+    await session.cleanup(options.keepTabs);
   }
   return { ok: error === undefined, error, elapsedMs: Date.now() - started, urls: Array.from(session.visited), tabsOpened: session.tabsOpened };
 }

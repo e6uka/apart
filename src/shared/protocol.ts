@@ -21,6 +21,7 @@ export type ExtRequestMethod =
   | "tabs.close"
   | "tabs.active"
   | "tabs.activate"
+  | "tabs.release"
   | "debugger.attach"
   | "debugger.detach"
   | "debugger.send"
@@ -99,7 +100,8 @@ export type ExtToDaemon =
   | ExtDetached
   | { type: "pong" }
   | { type: "clear-history"; before: number }
-  | { type: "set-default-browser"; browser: RunBrowser };
+  | { type: "set-default-browser"; browser: RunBrowser }
+  | { type: "set-keep-tabs"; keep: boolean };
 export type DaemonToExt =
   | ExtRequest
   | { type: "ping" }
@@ -108,7 +110,7 @@ export type DaemonToExt =
   | { type: "run-finished"; run: RunRecord }
   | { type: "run-ended"; id: string }
   | { type: "history"; runs: RunRecord[] }
-  | { type: "config"; defaultBrowser: RunBrowser };
+  | { type: "config"; defaultBrowser: RunBrowser; keepTabs: boolean };
 
 export const RUN_HISTORY_LIMIT = 200;
 export const MAX_URLS_PER_RUN = 20;
@@ -157,6 +159,7 @@ export interface DaemonStatus {
   running: boolean;
   headlessRunning: boolean;
   defaultBrowser: RunBrowser;
+  keepTabs: boolean;
 }
 
 export type CliMessage =

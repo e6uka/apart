@@ -610,6 +610,15 @@ export class Page {
     else await this.bridge.request("debugger.detach", { tabId: this.tabId }).catch(() => undefined);
   }
 
+  async leaveOpen(): Promise<void> {
+    if (this.detached) return;
+    this.detached = true;
+    this.unsubscribe();
+    this.failLoadWaiters();
+    this.failDownloads(new Error("The script ended before the download finished"));
+    await this.bridge.request("tabs.release", { tabId: this.tabId }).catch(() => undefined);
+  }
+
   async pressKey(key: string): Promise<void> {
     const descriptor = keyDescriptor(key);
     const base = { key: descriptor.key, code: descriptor.code, windowsVirtualKeyCode: descriptor.keyCode, nativeVirtualKeyCode: descriptor.keyCode, modifiers: descriptor.modifiers };

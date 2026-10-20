@@ -131,6 +131,11 @@ export class HeadlessBrowser extends EventEmitter implements BrowserBackend {
       }
       case "tabs.active":
         return null as T;
+      case "tabs.release": {
+        const target = this.byTab.get(Number(params.tabId));
+        if (target) await this.call("Target.closeTarget", { targetId: target.targetId }).catch(() => undefined);
+        return true as T;
+      }
       case "tabs.activate": {
         await this.call("Target.activateTarget", { targetId: this.require(params.tabId).targetId });
         return true as T;

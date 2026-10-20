@@ -39,6 +39,18 @@
       </form>
     </section>
 
+    <section class="section" aria-labelledby="tabs-title">
+      <h2 id="tabs-title">When a script ends</h2>
+      <p>Scripts can always close a tab themselves with <code>closeTab</code>. Headless tabs always close.</p>
+      <form class="panel field" id="tabs-form">
+        <fieldset class="choices" id="tabs-choices" disabled>
+          <legend class="visually-hidden">When a script ends</legend>
+          <label class="choice"><input type="checkbox" name="keep-tabs"><span><strong>Leave its tabs open</strong><span>They stay in the pink apart group, with apart no longer controlling them, so you can look around.</span></span></label>
+        </fieldset>
+        <p class="message" id="tabs-message" aria-live="polite"></p>
+      </form>
+    </section>
+
     <section class="section" aria-labelledby="setup-title">
       <h2 id="setup-title">First-time setup</h2>
       <ol class="steps">
