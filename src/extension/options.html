@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apart settings</title>
+<link rel="icon" href="icons/icon-32.png">
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="page.css">
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <a class="brand" href="options.html"><img class="mark-light" src="icons/mark.svg" alt=""><img class="mark-dark" src="icons/mark-dark.svg" alt=""><span>apart</span></a>
+      <nav class="page-nav" aria-label="apart pages">
+        <a class="button ghost" href="options.html" aria-current="page">Settings</a>
+        <a class="button ghost" href="activity.html">Activity</a>
+      </nav>
+    </header>
+
+    <h1>Settings</h1>
+    <p class="lede">apart lets the agent in your terminal open and use tabs in this browser. It works only with tabs it opens itself, in the pink apart tab group.</p>
+
+    <section class="section" aria-labelledby="connection-title">
+      <h2 id="connection-title">Connection</h2>
+      <div class="status-card" id="status"></div>
+    </section>
+
+    <section class="section" aria-labelledby="setup-title">
+      <h2 id="setup-title">First-time setup</h2>
+      <ol class="steps">
+        <li>Install the command line tool from the apart folder:<br><code>./install.sh</code></li>
+        <li>Check that everything is connected:<br><code>apart doctor</code></li>
+        <li>Optional, for gstack's /browse and /scrape:<br><code>./install.sh --gstack</code></li>
+      </ol>
+    </section>
+
+    <section class="section" aria-labelledby="port-title">
+      <h2 id="port-title">Daemon port</h2>
+      <p>Change this only if something else on your computer already uses port 27170.</p>
+      <form class="panel field" id="port-form" novalidate>
+        <label for="port">Port number</label>
+        <div class="field-row">
+          <input class="input port-input" id="port" name="port" inputmode="numeric" autocomplete="off" aria-describedby="port-message" disabled>
+          <button class="button primary" type="submit" disabled>Save</button>
+        </div>
+        <p class="message" id="port-message" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="section" aria-labelledby="kept-title">
+      <h2 id="kept-title">What apart keeps</h2>
+      <div class="panel">
+        <ul class="kept">
+          <li>The last 200 runs: when they ran, how long they took, whether they worked, and any error.</li>
+          <li>The pages each run opened, without query strings or anything after a #.</li>
+          <li>Nothing else. It stays in this browser and is never sent anywhere.</li>
+        </ul>
+        <div class="confirm-row" id="clear-row">
+          <button class="button danger" type="button" id="clear">Clear activity history</button>
+          <span class="message" id="clear-message" aria-live="polite"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apart activity</title>
+<link rel="icon" href="icons/icon-32.png">
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="page.css">
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <a class="brand" href="options.html"><img class="mark-light" src="icons/mark.svg" alt=""><img class="mark-dark" src="icons/mark-dark.svg" alt=""><span>apart</span></a>
+      <nav class="page-nav" aria-label="apart pages">
+        <a class="button ghost" href="options.html">Settings</a>
+        <a class="button ghost" href="activity.html" aria-current="page">Activity</a>
+      </nav>
+    </header>
+
+    <h1>Activity</h1>
+    <p class="lede">Every script your terminal ran through apart, newest first. Kept in this browser only.</p>
+
+    <div class="toolbar">
+      <div class="search">
+        <label class="visually-hidden" for="search">Search runs</label>
+        <span data-icon="search"></span>
+        <input class="input" id="search" type="search" placeholder="Search pages, errors, dates" autocomplete="off" spellcheck="false">
+      </div>
+      <button class="button filters-button" type="button" id="filters-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="filters">
+        <span data-icon="sliders"></span><span>Filters</span><span class="count" id="filter-count" hidden></span>
+      </button>
+      <div class="popover" id="filters" role="dialog" aria-label="Filters" hidden>
+        <fieldset>
+          <legend>Result</legend>
+          <label><input type="checkbox" name="result" value="ok"> Done</label>
+          <label><input type="checkbox" name="result" value="failed"> Failed</label>
+        </fieldset>
+        <fieldset>
+          <legend>When</legend>
+          <label><input type="radio" name="range" value="any" checked> Any time</label>
+          <label><input type="radio" name="range" value="1h"> Last hour</label>
+          <label><input type="radio" name="range" value="24h"> Last 24 hours</label>
+          <label><input type="radio" name="range" value="7d"> Last 7 days</label>
+        </fieldset>
+        <fieldset>
+          <legend>Sort</legend>
+          <label><input type="radio" name="sort" value="newest" checked> Newest first</label>
+          <label><input type="radio" name="sort" value="oldest"> Oldest first</label>
+          <label><input type="radio" name="sort" value="slowest"> Slowest first</label>
+        </fieldset>
+        <div class="popover-actions">
+          <button class="button ghost" type="button" id="filters-reset">Reset</button>
+          <button class="button primary" type="button" id="filters-done">Done</button>
+        </div>
+      </div>
+    </div>
+    <div class="chips" id="chips" hidden></div>
+
+    <p class="list-meta" id="list-meta" aria-live="polite"></p>
+    <div id="list" aria-busy="true">
+      <div class="runs">
+        <div class="row-skeleton"><div class="skeleton" style="height:16px;width:55%"></div><div class="skeleton" style="height:13px;width:35%;margin-top:8px"></div></div>
+        <div class="row-skeleton"><div class="skeleton" style="height:16px;width:65%"></div><div class="skeleton" style="height:13px;width:30%;margin-top:8px"></div></div>
+        <div class="row-skeleton"><div class="skeleton" style="height:16px;width:45%"></div><div class="skeleton" style="height:13px;width:40%;margin-top:8px"></div></div>
+      </div>
+    </div>
+    <nav class="pager" id="pager" aria-label="Pages" hidden></nav>
+  </div>
+  <script src="activity.js"></script>
+</body>
+</html>

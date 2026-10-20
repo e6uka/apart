@@ -1,0 +1,81 @@
+.page { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.page-nav { display: flex; gap: 4px; }
+.page-nav a[aria-current="page"] { background: var(--accent-soft); color: var(--text); border-color: transparent; }
+.page h1 { margin-top: 28px; font-size: 28px; font-weight: 700; letter-spacing: -0.015em; }
+.page .lede { margin-top: 6px; color: var(--muted); max-width: 60ch; }
+.section { margin-top: 32px; }
+.section h2 { font-size: 19px; font-weight: 700; }
+.section > p { margin-top: 6px; color: var(--muted); max-width: 64ch; }
+.panel { margin-top: 12px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); }
+
+.field label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.field-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.input {
+  min-height: 40px; padding: 0 12px; border-radius: var(--radius-control); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--text); font: 400 16px/1 Figtree, system-ui, sans-serif;
+}
+.input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-color: var(--focus); }
+.input[aria-invalid="true"] { border-color: var(--error); }
+.field .help, .field .message { margin-top: 6px; font-size: 14px; color: var(--muted); min-height: 1.5em; }
+.field .message.error { color: var(--error); }
+.field .message.ok { color: var(--ok); }
+.port-input { width: 140px; font-family: var(--mono); }
+
+.kept { margin: 0; padding-left: 20px; color: var(--text); }
+.kept li { margin-top: 4px; }
+.confirm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; min-height: 40px; }
+.confirm-row .message { font-size: 14px; color: var(--muted); }
+
+.steps { margin: 12px 0 0; padding: 0; list-style: none; counter-reset: step; }
+.steps li { position: relative; padding: 0 0 14px 36px; }
+.steps li::before {
+  counter-increment: step; content: counter(step); position: absolute; left: 0; top: 0;
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font: 700 13px/1 Figtree, system-ui, sans-serif; background: var(--accent-soft); color: var(--text);
+}
+.steps code { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; background: var(--surface-sunk); border: 1px solid var(--line); word-break: break-all; }
+
+.toolbar { display: flex; gap: 8px; margin-top: 20px; align-items: stretch; position: relative; }
+.search { flex: 1; position: relative; min-width: 0; }
+.search svg.icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.search .input { width: 100%; padding-left: 36px; }
+.filters-button { min-height: 40px; }
+.filters-button .count { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--accent-text); font-size: 12px; }
+.popover {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; width: min(340px, calc(100vw - 32px));
+  max-height: min(70vh, 560px); overflow-y: auto; padding: 16px; border-radius: var(--radius-card);
+  background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.popover fieldset { border: 0; margin: 0 0 14px; padding: 0; }
+.popover legend { font-weight: 700; font-size: 14px; padding: 0; margin-bottom: 6px; }
+.popover label { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 15px; cursor: pointer; }
+.popover input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+.popover-actions { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 4px 0 12px; border-radius: 15px; background: var(--accent-soft); color: var(--text); font-size: 14px; font-weight: 600; border: 0; cursor: pointer; }
+.chip svg.icon { width: 14px; height: 14px; margin: 0 4px; }
+.chip:hover { filter: brightness(0.97); }
+.clear-all { font: 600 14px/1 Figtree, system-ui, sans-serif; color: var(--accent); background: none; border: 0; cursor: pointer; padding: 6px 4px; text-decoration: underline; text-underline-offset: 2px; }
+
+.list-meta { margin-top: 16px; color: var(--muted); font-size: 14px; min-height: 1.5em; }
+.runs { margin-top: 8px; list-style: none; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); }
+.runs li { padding: 14px 16px; border-top: 1px solid var(--line); }
+.runs li:first-child { border-top: 0; }
+.run-line { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.run-pages { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.run-meta { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 14px; }
+.run-error { margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-control); background: var(--error-soft); color: var(--text); font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.run-more { margin: 2px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.run-more li { padding: 0; border: 0; }
+.run-more li::before { content: "then "; }
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.pager span { color: var(--muted); font-size: 14px; }
+.state-box { margin-top: 8px; padding: 32px 20px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); }
+.state-box strong { display: block; font-size: 17px; }
+.state-box p { margin: 6px auto 0; color: var(--muted); max-width: 46ch; }
+.state-box .button { margin-top: 14px; }
+.state-box code { color: var(--text); }
+.row-skeleton { padding: 16px; border-top: 1px solid var(--line); }
+.row-skeleton:first-child { border-top: 0; }

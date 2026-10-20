@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apart</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="popup-header">
+    <a class="brand" href="options.html" target="_blank" aria-label="apart settings">
+      <img class="mark-light" src="icons/mark.svg" alt=""><img class="mark-dark" src="icons/mark-dark.svg" alt="">
+      <span>apart</span>
+    </a>
+    <a class="button ghost icon-button" href="options.html" target="_blank" aria-label="Settings" data-icon="settings"></a>
+  </header>
+  <main>
+    <section class="status-card" id="status" aria-live="polite"></section>
+    <section class="recent" aria-labelledby="recent-title">
+      <div class="recent-head">
+        <h2 id="recent-title">Recent runs</h2>
+        <a href="activity.html" target="_blank" id="all-activity">See all</a>
+      </div>
+      <div id="recent" aria-busy="true">
+        <div class="recent-row"><div class="skeleton" style="height:14px;width:60%"></div><div class="skeleton" style="height:12px;width:40%;margin-top:6px"></div></div>
+        <div class="recent-row"><div class="skeleton" style="height:14px;width:70%"></div><div class="skeleton" style="height:12px;width:35%;margin-top:6px"></div></div>
+      </div>
+    </section>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

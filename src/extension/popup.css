@@ -1,0 +1,16 @@
+body { width: 360px; font-size: 14px; }
+.popup-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 4px 16px; }
+main { padding: 0 16px 16px; }
+.status-card { margin-top: 20px; }
+.recent { margin-top: 20px; }
+.recent-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.recent-head h2 { font-size: 14px; font-weight: 600; color: var(--muted); }
+.recent-head a { font-size: 14px; font-weight: 600; }
+.recent-row { padding: 10px 0; border-top: 1px solid var(--line); }
+.recent-row:first-child { border-top: 0; }
+.recent-row .line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.recent-row .page { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.recent-row .meta { margin-top: 2px; color: var(--muted); font-size: 13px; display: flex; gap: 12px; }
+.recent-row .error { margin-top: 4px; font-size: 13px; color: var(--error); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-empty { padding: 12px 14px; border-radius: var(--radius-card); background: var(--surface-sunk); color: var(--muted); }
+.recent-empty code { color: var(--text); }
