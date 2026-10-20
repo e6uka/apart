@@ -5,7 +5,7 @@
 
 Drive your real, signed-in Chrome from the terminal.
 
-`apart repl` runs a Playwright-style script against tabs it opens in **your own Chrome**, with your cookies and logged-in sessions, and prints what it saw. It works as the browser backend for gstack's `/browse`, `/scrape`, `/qa` and `/design-review` skills, so they drive the browser you already use instead of a headless one.
+`apart repl` runs a Playwright-style script against tabs it opens in **your own Chrome**, with your cookies and logged-in sessions, and prints what it saw. It is a plain command line tool: call it yourself, from a shell script, or from any coding agent that can run terminal commands (Claude Code, Codex, Cursor and others). Nothing else needs to be installed.
 
 ```bash
 apart repl '
@@ -39,7 +39,7 @@ No browser fork, no remote debugging port and no cloud service are involved: eve
 ### The extension
 
 - **Toolbar popup.** Whether the terminal can reach Chrome right now, and the last three runs. When it is not connected, it shows the command to start apart, with a Copy button and a Check now button.
-- **Activity.** Every run with the pages it opened, how long it took and any error, searchable and filterable by result, time and sort order. Successful runs that open nothing (gstack's readiness check) are left out.
+- **Activity.** Every run with the pages it opened, how long it took and any error, searchable and filterable by result, time and sort order. Successful runs that open nothing (such as an agent's readiness check) are left out.
 - **Settings.** Connection details, the daemon port, a setup checklist, and what apart keeps: the last 200 runs, with page addresses stripped of query strings and fragments, stored only in this browser. You can clear it there.
 
 Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart from yours.
@@ -65,9 +65,20 @@ apart doctor
 
 `doctor` starts the daemon, waits for the extension to connect and tells you what, if anything, is missing. Chrome shows an "apart is debugging this browser" bar while a script runs; that is Chrome's standard notice for `chrome.debugger`.
 
-### Using it from gstack
+## Using it from an agent
 
-gstack's browser skills look for a command named `aside` (on `PATH` or at `~/.local/bin/aside`). Install apart under that name as well:
+Any agent that can run shell commands can use apart. Tell it the command exists and point it at the [Script API](#script-api), for example in your project's `CLAUDE.md` or `AGENTS.md`:
+
+```markdown
+To read or act on a web page in my signed-in Chrome, run `apart repl '<script>'`.
+Scripts use the Playwright-style API in https://github.com/e6uka/apart#script-api.
+Open tabs with `openTab(url)`, read them with `snapshot(pg)`, and close them with `closeTab(pg)`.
+The last line of output is `[ok …]` or `[error …]`.
+```
+
+### Optional: gstack
+
+If you use [gstack](https://github.com/garrytan/gstack), its `/browse`, `/scrape`, `/qa` and `/design-review` skills can drive your Chrome through apart instead of a headless browser. They look for a command named `aside` (on `PATH` or at `~/.local/bin/aside`), so install apart under that name as well:
 
 ```bash
 ./install.sh --gstack
@@ -153,6 +164,10 @@ yarn test           # unit tests
 yarn test:e2e       # launches a headless Chrome with the extension (needs Chrome for Testing or Chrome)
 yarn typecheck
 ```
+
+## Privacy
+
+apart has no servers, accounts or analytics, and nothing it handles leaves your computer. See [PRIVACY.md](PRIVACY.md).
 
 ## License
 
