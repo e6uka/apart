@@ -101,6 +101,10 @@ const SCRIPT = (url: string) => `
   const saved = await download.path();
   console.log("DOWNLOAD=" + download.suggestedFilename() + " " + path.relative(pwd, saved) + " " + JSON.stringify(await fs.readFile(saved, "utf8")));
 
+  await pg.evaluate(() => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["hello"])); a.download = "hello.txt"; a.id = "blob"; a.textContent = "Blob"; document.body.prepend(a); });
+  const [blob] = await Promise.all([pg.waitForEvent("download"), pg.click("#blob")]);
+  console.log("BLOB=" + blob.suggestedFilename() + " " + JSON.stringify(await fs.readFile(await blob.path(), "utf8")));
+
   const shot = await annotatedScreenshot(pg);
   console.log("ANNOTATED=" + (shot.refCount > 4));
   await closeTab(pg);
@@ -130,6 +134,7 @@ function expectFeatures(text: string): void {
   expect(text).toContain("FILES=notes.txt:5:text/plain,data.csv:3:text/csv");
   expect(text).toContain("ESCAPE=PathEscapesRunDirError");
   expect(text).toContain('DOWNLOAD=report.csv downloads/report.csv "a,b\\n1,2\\n"');
+  expect(text).toContain('BLOB=hello.txt "hello"');
   expect(text).toContain("ANNOTATED=true");
 }
 
