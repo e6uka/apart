@@ -169,6 +169,18 @@ describe.skipIf(!enabled)("end to end against Chrome", () => {
     expect((await bridge.listTabs()).some((tab) => tab.url.startsWith(pageUrl))).toBe(false);
   }, 60000);
 
+  it("refuses about: pages the browser keeps from extensions, and stays connected", async () => {
+    for (const code of ['await openTab("about:blank#x");', 'const pg = await openTab(); await pg.goto("about:blank#x");']) {
+      const result = await runScript({ bridge, runDir: mkdtempSync(path.join(os.tmpdir(), "apart-e2e-about-")), timeoutMs: 20000, emit: () => undefined, code });
+      expect(result.error).toMatch(/only about:blank works here/);
+    }
+    expect(bridge.connected).toBe(true);
+    const out: string[] = [];
+    const after = await runScript({ bridge, runDir: mkdtempSync(path.join(os.tmpdir(), "apart-e2e-about-")), timeoutMs: 20000, emit: (text) => out.push(text), code: `const pg = await openTab(${JSON.stringify(pageUrl)}); console.log(await pg.title()); await closeTab(pg);` });
+    expect(after.error).toBeUndefined();
+    expect(out).toContain("apart e2e");
+  }, 60000);
+
   it("leaves tabs open at the end when asked, without controlling them", async () => {
     const out: string[] = [];
     const keepUrl = `${pageUrl}?kept`;
