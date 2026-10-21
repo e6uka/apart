@@ -19,7 +19,7 @@
     </header>
 
     <h1>Activity</h1>
-    <p class="lede">Every script your terminal ran through apart, newest first, in your Chrome or headless. Kept on this computer only.</p>
+    <p class="lede">Every script your terminal ran through apart, newest first, in any of your browsers or headless. Kept on this computer only.</p>
 
     <div class="toolbar">
       <div class="search">
@@ -36,10 +36,9 @@
           <label><input type="checkbox" name="result" value="ok"> Done</label>
           <label><input type="checkbox" name="result" value="failed"> Failed</label>
         </fieldset>
-        <fieldset>
+        <fieldset id="browser-filter">
           <legend>Browser</legend>
-          <label><input type="checkbox" name="browser" value="chrome"> Your Chrome</label>
-          <label><input type="checkbox" name="browser" value="headless"> Headless</label>
+          <div id="browser-options"></div>
         </fieldset>
         <fieldset>
           <legend>When</legend>

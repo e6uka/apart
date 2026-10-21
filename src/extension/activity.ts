@@ -1,5 +1,6 @@
 import type { RunBrowser, RunRecord } from "../shared/protocol";
-import { BROWSER_LABELS, absoluteTime, displayUrl, duration, escapeHtml, icon, onStateChange, readState, relativeTime, resultBadge, resultLabel, runBrowser } from "./ui/common";
+import { isBrowserName } from "../shared/browsers";
+import { browserLabel, absoluteTime, displayUrl, duration, escapeHtml, icon, onStateChange, readState, relativeTime, resultBadge, resultLabel, runBrowser } from "./ui/common";
 
 type Result = "ok" | "failed";
 type Range = "any" | "1h" | "24h" | "7d";
@@ -8,7 +9,6 @@ interface Query { q: string; result: Result[]; browser: RunBrowser[]; range: Ran
 
 const PAGE_SIZE = 25;
 const RESULTS: Result[] = ["ok", "failed"];
-const BROWSERS: RunBrowser[] = ["chrome", "headless"];
 const RANGES: Record<Range, { label: string; ms: number }> = {
   any: { label: "Any time", ms: Infinity },
   "1h": { label: "Last hour", ms: 3600e3 },
@@ -34,7 +34,7 @@ document.querySelectorAll<HTMLElement>("[data-icon]").forEach((el) => {
 function readQuery(): Query {
   const params = new URLSearchParams(location.search);
   const result = (params.get("result") ?? "").split(",").filter((value): value is Result => RESULTS.includes(value as Result));
-  const browser = (params.get("browser") ?? "").split(",").filter((value): value is RunBrowser => BROWSERS.includes(value as RunBrowser));
+  const browser = (params.get("browser") ?? "").split(",").filter((value): value is RunBrowser => isBrowserName(value));
   const range = (params.get("range") ?? "any") as Range;
   const sort = (params.get("sort") ?? "newest") as Sort;
   const page = Number(params.get("page") ?? "1");
@@ -61,6 +61,18 @@ function writeQuery(query: Query): void {
 }
 
 let query = readQuery();
+const browserOptions = document.getElementById("browser-options") as HTMLDivElement;
+let shownBrowsers = "";
+
+function renderBrowserOptions(names: string[]): void {
+  const list = Array.from(new Set([...names, ...query.browser])).sort((a, b) => browserLabel(a).localeCompare(browserLabel(b)));
+  const key = list.join(",");
+  if (key === shownBrowsers) return;
+  shownBrowsers = key;
+  browserOptions.innerHTML = list
+    .map((name) => `<label><input type="checkbox" name="browser" value="${escapeHtml(name)}"${query.browser.includes(name) ? " checked" : ""}> ${escapeHtml(browserLabel(name))}</label>`)
+    .join("");
+}
 let runs: RunRecord[] = [];
 let loadState: "loading" | "ready" | "error" = "loading";
 let loadError = "";
@@ -69,7 +81,7 @@ function haystack(run: RunRecord): string {
   return [
     resultLabel(run),
     run.ok ? "ok succeeded success" : "failed error",
-    BROWSER_LABELS[runBrowser(run)],
+    browserLabel(runBrowser(run)),
     ...run.urls,
     ...run.urls.map(displayUrl),
     run.error ?? "",
@@ -114,7 +126,7 @@ function renderChips(): void {
   const items: string[] = [];
   if (query.q) items.push(`<button class="chip" type="button" data-remove="q" aria-label="Remove search ${escapeHtml(query.q)}">Search: ${escapeHtml(query.q)}${icon("x")}</button>`);
   for (const result of query.result) items.push(`<button class="chip" type="button" data-remove="result" data-value="${result}" aria-label="Remove filter ${RESULT_LABELS[result]}">${RESULT_LABELS[result]}${icon("x")}</button>`);
-  for (const browser of query.browser) items.push(`<button class="chip" type="button" data-remove="browser" data-value="${browser}" aria-label="Remove filter ${BROWSER_LABELS[browser]}">${BROWSER_LABELS[browser]}${icon("x")}</button>`);
+  for (const browser of query.browser) items.push(`<button class="chip" type="button" data-remove="browser" data-value="${browser}" aria-label="Remove filter ${escapeHtml(browserLabel(browser))}">${escapeHtml(browserLabel(browser))}${icon("x")}</button>`);
   if (query.range !== "any") items.push(`<button class="chip" type="button" data-remove="range" aria-label="Remove filter ${RANGES[query.range].label}">${RANGES[query.range].label}${icon("x")}</button>`);
   if (query.sort !== "newest") items.push(`<button class="chip" type="button" data-remove="sort" aria-label="Remove sort ${SORTS[query.sort]}">${SORTS[query.sort]}${icon("x")}</button>`);
   chips.hidden = items.length === 0;
@@ -131,7 +143,7 @@ function renderRun(run: RunRecord): string {
     ${more}
     <div class="run-meta">
       <span><time datetime="${new Date(run.startedAt).toISOString()}" title="${escapeHtml(absoluteTime(run.startedAt))}">${escapeHtml(absoluteTime(run.startedAt))}</time></span>
-      <span>${BROWSER_LABELS[runBrowser(run)]}</span>
+      <span>${escapeHtml(browserLabel(runBrowser(run)))}</span>
       <span>took ${escapeHtml(duration(run.elapsedMs))}</span>
       <span>${run.tabsOpened} tab${run.tabsOpened === 1 ? "" : "s"} opened</span>
     </div>
@@ -280,7 +292,9 @@ document.addEventListener("click", (event) => {
 
 async function load(): Promise<void> {
   try {
-    runs = (await readState()).runs;
+    const state = await readState();
+    runs = state.runs;
+    renderBrowserOptions([...runs.map(runBrowser), ...(state.browsers ?? []), "headless"]);
     loadState = "ready";
   } catch (error) {
     loadState = "error";

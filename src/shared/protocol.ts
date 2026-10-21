@@ -46,6 +46,8 @@ export interface ExtHello {
   version: number;
   extensionVersion: string;
   historyClearedAt?: number;
+  name?: string;
+  brands?: string[];
 }
 
 export interface ExtEvent {
@@ -75,7 +77,7 @@ export interface DaemonInfo {
   port: number;
 }
 
-export type RunBrowser = "chrome" | "headless";
+export type RunBrowser = string;
 
 export interface RunRecord {
   id: string;
@@ -105,12 +107,12 @@ export type ExtToDaemon =
 export type DaemonToExt =
   | ExtRequest
   | { type: "ping" }
-  | { type: "welcome"; daemon: DaemonInfo }
+  | { type: "welcome"; daemon: DaemonInfo; browser?: string }
   | { type: "run-started"; run: RunStarted }
   | { type: "run-finished"; run: RunRecord }
   | { type: "run-ended"; id: string }
   | { type: "history"; runs: RunRecord[] }
-  | { type: "config"; defaultBrowser: RunBrowser; keepTabs: boolean };
+  | { type: "config"; defaultBrowser: RunBrowser; keepTabs: boolean; browsers?: string[] };
 
 export const RUN_HISTORY_LIMIT = 200;
 export const MAX_URLS_PER_RUN = 20;
@@ -156,6 +158,7 @@ export interface DaemonStatus {
   uptimeMs: number;
   extensionConnected: boolean;
   extensionVersion: string | null;
+  browsers: { name: string; version: string }[];
   running: boolean;
   headlessRunning: boolean;
   defaultBrowser: RunBrowser;

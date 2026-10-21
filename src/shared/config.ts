@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { APART_HOME } from "./paths";
+import { HEADLESS, isBrowserName } from "./browsers";
 import type { RunBrowser } from "./protocol";
 
 export const CONFIG_PATH = path.join(APART_HOME, "config.json");
-export const BROWSERS: readonly RunBrowser[] = ["chrome", "headless"];
 
 export interface ApartConfig {
   defaultBrowser: RunBrowser;
@@ -14,7 +14,11 @@ export interface ApartConfig {
 export const DEFAULT_CONFIG: ApartConfig = { defaultBrowser: "chrome", keepTabs: false };
 
 export function isBrowser(value: unknown): value is RunBrowser {
-  return typeof value === "string" && (BROWSERS as readonly string[]).includes(value);
+  return isBrowserName(value);
+}
+
+export function isHeadless(browser: RunBrowser): boolean {
+  return browser === HEADLESS;
 }
 
 export async function readConfig(file = CONFIG_PATH): Promise<ApartConfig & { saved: boolean }> {

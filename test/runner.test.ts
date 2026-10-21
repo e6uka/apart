@@ -68,7 +68,7 @@ describe("runScript", () => {
   it("explains a missing extension when a tab is opened", async () => {
     const result = await run('await openTab("https://example.com");');
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/extension is not connected/);
+    expect(result.error).toMatch(/No browser is connected/);
   });
 
   it("does not expose node globals", async () => {

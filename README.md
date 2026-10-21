@@ -36,14 +36,18 @@ terminal ── apart repl ──▶ daemon (Node, ~/.apart/daemon.sock)
 
 No browser fork, no remote debugging port and no cloud service are involved: everything runs on your machine, through an extension you load yourself.
 
-### Your Chrome or headless
+### Your browsers, or headless
 
-Each run uses one of two browsers:
+Each run uses one browser:
 
-- **Your Chrome** (`--chrome`): the browser you are signed in to, through the extension. You can watch it work.
-- **Headless** (`--headless`): a hidden Chrome the daemon starts itself, with its own signed-out profile in `~/.apart/headless-profile`. It needs no extension and works while your Chrome is closed. The daemon talks to it over a pipe, not a network port, starts it on the first headless run and closes it after five idle minutes.
+- **Your browsers** (`--browser chrome`, `--browser arc`, …): any Chromium-based browser you have loaded the extension into, such as Chrome, Arc, Brave or Edge, signed in as you. You can watch it work. Several can be connected at once.
+- **Headless** (`--headless`): a hidden Chrome the daemon starts itself, with its own signed-out profile in `~/.apart/headless-profile`. It needs no extension and works while your browsers are closed. The daemon talks to it over a pipe, not a network port, starts it on the first headless run and closes it after five idle minutes.
 
-Runs without a flag use your default browser. `./install.sh` asks for it the first time; change it later in the extension's Settings or with `apart config default-browser chrome|headless`. Both kinds of run appear in the extension's Activity page.
+The daemon names each connected browser after its app (`chrome`, `arc`, `brave`, `edge`). To use two profiles of the same browser at once, give one its own name in that profile's extension Settings; otherwise the newest connection takes over. `apart daemon status` lists what is connected.
+
+Runs without a flag use your default browser. `./install.sh` asks for it the first time; change it later in the extension's Settings or with `apart config default-browser <name>`. Scripts in different browsers run at the same time; scripts in the same browser run one after another. Every run appears in the Activity page of each connected browser.
+
+Safari is not supported: it gives extensions no way to control tabs, and its automation mode runs in a separate, signed-out window.
 
 ### The extension
 
@@ -56,7 +60,7 @@ Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart
 ## Requirements
 
 - macOS or Linux, Node.js 22 or newer, yarn
-- Google Chrome or Chromium (version 120 or newer)
+- Google Chrome, Arc, Brave, Edge or another Chromium-based browser (Chromium 125 or newer)
 
 ## Install
 
@@ -66,7 +70,7 @@ cd apart
 ./install.sh
 ```
 
-The installer asks which browser runs should use by default (pass `--browser=chrome` or `--browser=headless` to skip the question). If you chose your Chrome, load the extension once: in Chrome open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose `dist/extension` (print its path with `apart extension-path`). Finish with:
+The installer asks which browser runs should use by default (pass `--browser=<name>` to skip the question). Then load the extension once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`), turn on **Developer mode**, click **Load unpacked** and choose `dist/extension` (print its path with `apart extension-path`). Finish with:
 
 ```bash
 apart doctor
@@ -99,8 +103,8 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 
 | Command | What it does |
 | --- | --- |
-| `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--headless` or `--chrome` to pick the browser for this run. Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
-| `apart config default-browser chrome\|headless` | Set the browser runs use without a flag. `apart config` shows the current settings. |
+| `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--browser <name>` (or `--headless`, `--chrome`) to pick the browser for this run. Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
+| `apart config default-browser <name>` | Set the browser runs use without a flag. `apart config` shows the current settings. |
 | `apart config keep-tabs on\|off` | Leave tabs a script opened in your Chrome open when it ends, instead of closing them. Also in the extension's Settings. |
 | `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. |
 | `apart doctor` | Check Node, the build, the shims, the daemon, the extension and the browser for headless runs. |

@@ -75,14 +75,25 @@ async function historyClearedAt(): Promise<number> {
   return typeof at === "number" ? at : 0;
 }
 
-function recordRuns(incoming: RunRecord[], clearCurrent: boolean): Promise<void> {
+function recordRuns(incoming: RunRecord[]): Promise<void> {
   return queueStorage(async () => {
-    const { runs } = await chrome.storage.local.get("runs");
+    const { runs, current } = await chrome.storage.local.get(["runs", "current"]);
     const merged = mergeRuns(Array.isArray(runs) ? (runs as RunRecord[]) : [], incoming, await historyClearedAt());
     const update: Record<string, unknown> = { runs: merged };
-    if (clearCurrent) update.current = null;
+    const currentId = (current as { id?: string } | null)?.id;
+    if (currentId && incoming.some((run) => run.id === currentId)) update.current = null;
     await chrome.storage.local.set(update);
   });
+}
+
+async function chosenName(): Promise<string | undefined> {
+  const { browserName } = await chrome.storage.local.get("browserName");
+  return typeof browserName === "string" && browserName ? browserName : undefined;
+}
+
+function brands(): string[] {
+  const data = (navigator as Navigator & { userAgentData?: { brands?: { brand: string }[] } }).userAgentData;
+  return (data?.brands ?? []).map((item) => item.brand);
 }
 
 function send(message: ExtToDaemon): void {
@@ -222,12 +233,12 @@ async function handleMessage(ws: WebSocket, message: DaemonToExt): Promise<void>
     if (message.type === "ping") reply(ws, { type: "pong" });
     else if (message.type === "welcome") {
       retryAttempt = 0;
-      await chrome.storage.local.set({ daemon: message.daemon, current: null });
+      await chrome.storage.local.set({ daemon: message.daemon, browser: message.browser ?? null, current: null });
       await setStatus("connected");
     } else if (message.type === "run-started") await chrome.storage.local.set({ current: message.run });
-    else if (message.type === "run-finished") await recordRuns([message.run], message.run.browser !== "headless");
-    else if (message.type === "history") await recordRuns(message.runs, false);
-    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser, keepTabs: message.keepTabs === true });
+    else if (message.type === "run-finished") await recordRuns([message.run]);
+    else if (message.type === "history") await recordRuns(message.runs);
+    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser, keepTabs: message.keepTabs === true, browsers: message.browsers ?? null });
     else if (message.type === "run-ended") await chrome.storage.local.set({ current: null });
     return;
   }
@@ -261,8 +272,15 @@ async function openSocket(): Promise<void> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ext`);
   socket = ws;
   ws.onopen = () => {
-    void historyClearedAt().then((clearedAt) => {
-      ws.send(JSON.stringify({ type: "hello", version: PROTOCOL_VERSION, extensionVersion: chrome.runtime.getManifest().version, ...(clearedAt ? { historyClearedAt: clearedAt } : {}) }));
+    void Promise.all([historyClearedAt(), chosenName()]).then(([clearedAt, name]) => {
+      ws.send(JSON.stringify({
+        type: "hello",
+        version: PROTOCOL_VERSION,
+        extensionVersion: chrome.runtime.getManifest().version,
+        brands: brands(),
+        ...(name ? { name } : {}),
+        ...(clearedAt ? { historyClearedAt: clearedAt } : {}),
+      }));
     });
   };
   ws.onmessage = (event) => {
@@ -314,7 +332,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (changes.port) reconnect();
+  if (changes.port || changes.browserName) reconnect();
   const clearedAt = changes.historyClearedAt?.newValue;
   if (typeof clearedAt === "number") send({ type: "clear-history", before: clearedAt });
 });
