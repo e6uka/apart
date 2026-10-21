@@ -151,6 +151,8 @@ Each `repl` call is a fresh session. Variables do not persist between calls, and
 
 `click`, `dblclick`, `hover`, `focus`, `fill`, `clear`, `type`, `press`, `check`, `uncheck`, `selectOption`, `setInputFiles(files)`, `textContent`, `innerText`, `innerHTML`, `inputValue`, `getAttribute`, `isVisible`, `isHidden`, `isEnabled`, `isChecked`, `count`, `all`, `first`, `last`, `nth`, `boundingBox`, `evaluate(fn)`, `screenshot({ path, margin })`, `waitFor({ state, timeout })`, `scrollIntoViewIfNeeded`.
 
+Before clicking, apart checks that the element is what sits under the click point. If something covers it (an overlay, a collapsed section, a cookie banner), it waits up to the timeout and then fails with an error naming what is in the way, instead of clicking the wrong thing. `click({ force: true })` skips the check.
+
 **FrameLocator**
 
 `locator`, `getByRole`, `getByLabel`, `getByText`, `getByPlaceholder`, `getByTestId`, `frameLocator` (for a frame inside a frame), `first`, `last`, `nth`.
