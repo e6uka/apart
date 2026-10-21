@@ -7,11 +7,12 @@ BROWSER=""
 for arg in "$@"; do
   case "$arg" in
     --gstack) GSTACK=1 ;;
-    --browser=chrome|--browser=headless) BROWSER="${arg#--browser=}" ;;
+    --browser=*) BROWSER="${arg#--browser=}" ;;
     -h|--help)
       echo "Usage: ./install.sh [--gstack] [--browser=chrome|headless]"
       echo "  --gstack    also link apart as ~/.local/bin/aside, the command gstack's browser skills look for"
-      echo "  --browser   which browser apart repl uses by default (asked on first install if left out)"
+      echo "  --browser   which browser apart repl uses by default: chrome, arc, brave, edge or headless"
+      echo "              (asked on first install if left out)"
       exit 0
       ;;
     *)
@@ -64,21 +65,45 @@ fi
 
 CONFIG="${APART_HOME:-$HOME/.apart}/config.json"
 if [ -z "$BROWSER" ] && [ ! -f "$CONFIG" ] && [ -t 0 ]; then
+  NAMES=""
+  LABELS=""
+  add_choice() {
+    NAMES="$NAMES $1"
+    LABELS="$LABELS|$2"
+  }
+  if [ "$(uname)" = Darwin ]; then
+    [ -d "/Applications/Google Chrome.app" ] && add_choice chrome "Chrome"
+    [ -d "/Applications/Arc.app" ] && add_choice arc "Arc"
+    [ -d "/Applications/Brave Browser.app" ] && add_choice brave "Brave"
+    [ -d "/Applications/Microsoft Edge.app" ] && add_choice edge "Edge"
+    [ -d "/Applications/Chromium.app" ] && add_choice chromium "Chromium"
+  fi
+  [ -z "$NAMES" ] && add_choice chrome "Chrome"
+  add_choice headless "Headless"
   echo
   echo "Which browser should apart use by default?"
-  echo "  1. Your Chrome: signed in as you, and you can watch it work (needs the extension)"
-  echo "  2. Headless: a hidden Chrome apart starts itself, signed out"
-  printf "Choose 1 or 2 [1]: "
+  i=1
+  for name in $NAMES; do
+    label=$(printf '%s' "$LABELS" | cut -d'|' -f$((i + 1)))
+    if [ "$name" = headless ]; then
+      echo "  $i. $label: a hidden Chrome apart starts itself, signed out"
+    else
+      echo "  $i. $label: signed in as you, and you can watch it work (needs the extension)"
+    fi
+    i=$((i + 1))
+  done
+  printf "Choose a number [1]: "
   read -r answer || answer=""
   case "$answer" in
-    2) BROWSER=headless ;;
-    *) BROWSER=chrome ;;
+    ''|*[!0-9]*) answer=1 ;;
   esac
+  BROWSER=$(printf '%s\n' $NAMES | sed -n "${answer}p")
+  [ -z "$BROWSER" ] && BROWSER=$(printf '%s\n' $NAMES | sed -n 1p)
 fi
 if [ -n "$BROWSER" ]; then
   echo
   node "$TARGET" config default-browser "$BROWSER"
-  echo "Change it any time in the extension's settings or with: apart config default-browser chrome|headless"
+  echo "Change it any time in the extension's settings or with: apart config default-browser <name>"
 fi
 
 if [ -z "$BROWSER" ]; then
@@ -87,11 +112,11 @@ fi
 
 echo
 if [ "$BROWSER" = headless ]; then
-  echo "To also use your own Chrome (repl --chrome), load the extension once:"
+  echo "To also use your own browsers (repl --browser <name>), load the extension once in each:"
 else
-  echo "Load the extension once:"
+  echo "Load the extension once in each browser you want apart to use (Chrome, Arc, Brave, Edge):"
 fi
-echo "  1. In Chrome open chrome://extensions and turn on Developer mode"
+echo "  1. Open chrome://extensions (in Arc: arc://extensions) and turn on Developer mode"
 echo "  2. Click \"Load unpacked\" and choose: $PWD/dist/extension"
 echo
 echo "Then check everything with:  $BIN/apart doctor"

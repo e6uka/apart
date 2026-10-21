@@ -22,7 +22,8 @@
 .field .message.ok { color: var(--ok); }
 .port-input { width: 140px; font-family: var(--mono); }
 
-#browser-message, #tabs-message { min-height: 3em; }
+#browser-message, #tabs-message, #name-message { min-height: 3em; }
+.choice code { font-size: 13px; color: var(--muted); }
 .choices { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; }
 .field .choice {
   display: flex; margin: 0; font-size: 16px; font-weight: 400; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--radius-control);

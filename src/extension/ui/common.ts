@@ -13,6 +13,7 @@ import settingsIcon from "lucide-static/icons/settings.svg";
 import slidersIcon from "lucide-static/icons/sliders-horizontal.svg";
 import trashIcon from "lucide-static/icons/trash-2.svg";
 import xIcon from "lucide-static/icons/x.svg";
+import { browserLabel, isBrowserName } from "../../shared/browsers";
 import type { DaemonInfo, RunBrowser, RunRecord, RunStarted } from "../../shared/protocol";
 
 const ICONS = {
@@ -52,18 +53,24 @@ export interface ExtensionState {
   runs: RunRecord[];
   port: number | null;
   defaultBrowser: RunBrowser | null;
+  browser: string | null;
+  browsers: string[] | null;
+  browserName: string | null;
   keepTabs: boolean | null;
 }
 
 export async function readState(): Promise<ExtensionState> {
-  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser", "keepTabs"]);
+  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser", "keepTabs", "browser", "browsers", "browserName"]);
   return {
     status: (stored.status as ExtensionState["status"]) ?? null,
     daemon: (stored.daemon as DaemonInfo) ?? null,
     current: (stored.current as RunStarted) ?? null,
     runs: Array.isArray(stored.runs) ? (stored.runs as RunRecord[]) : [],
     port: typeof stored.port === "number" ? stored.port : null,
-    defaultBrowser: stored.defaultBrowser === "headless" || stored.defaultBrowser === "chrome" ? stored.defaultBrowser : null,
+    defaultBrowser: isBrowserName(stored.defaultBrowser) ? stored.defaultBrowser : null,
+    browser: isBrowserName(stored.browser) ? stored.browser : null,
+    browsers: Array.isArray(stored.browsers) ? (stored.browsers as unknown[]).filter(isBrowserName) : null,
+    browserName: isBrowserName(stored.browserName) ? stored.browserName : null,
     keepTabs: typeof stored.keepTabs === "boolean" ? stored.keepTabs : null,
   };
 }
@@ -121,10 +128,10 @@ export function runTitle(run: RunRecord): string {
 }
 
 export function runBrowser(run: RunRecord): RunBrowser {
-  return run.browser === "headless" ? "headless" : "chrome";
+  return isBrowserName(run.browser) ? run.browser : "chrome";
 }
 
-export const BROWSER_LABELS: Record<RunBrowser, string> = { chrome: "Your Chrome", headless: "Headless" };
+export { browserLabel };
 
 export function resultLabel(run: RunRecord): string {
   return run.ok ? "Done" : "Failed";
@@ -144,7 +151,7 @@ const COPY: Record<ConnectionState, { tab: string; title: string; body: string }
   running: { tab: "Working", title: "Running a script", body: "Tabs it opens appear in the pink apart group and close when it finishes." },
   disconnected: { tab: "Offline", title: "Not connected", body: "Start apart in your terminal, then check again." },
   rejected: { tab: "Refused", title: "Connection refused", body: "The daemon did not accept this extension. Reinstall apart from its repository so the two match, then check again." },
-  replaced: { tab: "Elsewhere", title: "Connected in another profile", body: "Another Chrome window or profile took over the connection. Close it, or check again to take it back here." },
+  replaced: { tab: "Elsewhere", title: "Connected in another profile", body: "Another profile of this browser took over the connection. Give each profile its own name below to use both, or check again to take it back here." },
 };
 
 export function renderStatusCard(root: HTMLElement, state: ExtensionState, options: { compact?: boolean } = {}): void {
@@ -158,6 +165,7 @@ export function renderStatusCard(root: HTMLElement, state: ExtensionState, optio
   let extra = "";
   if (kind === "connected" || kind === "running") {
     const facts = [`<dt>Daemon</dt><dd>${escapeHtml(state.daemon?.version ?? "unknown")}</dd>`, `<dt>Port</dt><dd>${port}</dd>`];
+    if (state.browser) facts.unshift(`<dt>Name</dt><dd>${escapeHtml(state.browser)}</dd>`);
     if (kind === "running" && state.current) facts.unshift(`<dt>Started</dt><dd>${escapeHtml(relativeTime(state.current.startedAt))}</dd>`);
     if (!options.compact) facts.push(`<dt>Extension</dt><dd>${escapeHtml(chrome.runtime.getManifest().version)}</dd>`);
     extra = `<dl class="status-facts">${facts.join("")}</dl>`;

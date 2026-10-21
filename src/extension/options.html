@@ -28,14 +28,26 @@
 
     <section class="section" aria-labelledby="browser-title">
       <h2 id="browser-title">Default browser</h2>
-      <p>Which browser <code>apart repl</code> uses when a script does not say. Add <code>--chrome</code> or <code>--headless</code> to choose for one run.</p>
+      <p>Which browser <code>apart repl</code> uses when a script does not say. Add <code>--browser &lt;name&gt;</code> to choose for one run.</p>
       <form class="panel field" id="browser-form">
         <fieldset class="choices" id="browser-choices" disabled>
           <legend class="visually-hidden">Default browser</legend>
-          <label class="choice"><input type="radio" name="browser" value="chrome"><span><strong>Your Chrome</strong><span>Signed in as you, in the pink apart group. You can watch it work.</span></span></label>
-          <label class="choice"><input type="radio" name="browser" value="headless"><span><strong>Headless</strong><span>A hidden Chrome apart starts itself, signed out. Its runs still show in Activity.</span></span></label>
+          <div class="choices" id="browser-list"></div>
         </fieldset>
         <p class="message" id="browser-message" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="section" aria-labelledby="name-title">
+      <h2 id="name-title">This browser's name</h2>
+      <p>Scripts pick a browser by name, as in <code>apart repl --browser arc</code>. apart names each browser after the app. Set your own to use two profiles of the same browser at once.</p>
+      <form class="panel field" id="name-form" novalidate>
+        <label for="browser-name">Name</label>
+        <div class="field-row">
+          <input class="input port-input" id="browser-name" name="browser-name" autocomplete="off" spellcheck="false" placeholder="automatic" aria-describedby="name-message">
+          <button class="button primary" type="submit">Save</button>
+        </div>
+        <p class="message" id="name-message" aria-live="polite"></p>
       </form>
     </section>
 

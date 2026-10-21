@@ -3,11 +3,12 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import type { BrowserBackend } from "./backend";
-import { ExtensionBridge } from "./bridge";
+import { ExtensionBridge, type ExtensionConnection } from "./bridge";
 import { HeadlessBrowser } from "./headless";
 import { RunHistory } from "./history";
 import { runScript } from "./runner";
-import { isBrowser, readConfig, writeConfig } from "../shared/config";
+import { browserLabel } from "../shared/browsers";
+import { isBrowser, isHeadless, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, HISTORY_PATH, LOG_DIR, PID_PATH, RUNS_DIR, SOCKET_DIR, SOCKET_PATH } from "../shared/paths";
 import { allowedExtensionOrigins, type CliMessage, type CliRequest, type DaemonStatus, type ExtHello, type RunRecord } from "../shared/protocol";
 
@@ -67,20 +68,23 @@ export async function runDaemon(options: { port: number; version: string }): Pro
   const history = new RunHistory(HISTORY_PATH);
   let config = await readConfig();
   const headless = new HeadlessBrowser({ profileDir: HEADLESS_PROFILE_DIR, log });
-  bridge.on("connected", (hello: ExtHello) => {
-    log(`extension connected (version ${bridge.extensionVersion})`);
-    void (async () => {
-      config = await readConfig();
-      bridge.notify({ type: "config", defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs });
-      if (typeof hello.historyClearedAt === "number") await history.clearBefore(hello.historyClearedAt);
-      bridge.notify({ type: "history", runs: await history.list() });
-    })().catch((error) => log(`could not send run history: ${error instanceof Error ? error.message : String(error)}`));
-  });
-  bridge.on("disconnected", () => log("extension disconnected"));
+  const configMessage = () => ({ type: "config" as const, defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs, browsers: bridge.browsers().map((item) => item.name) });
   const announceConfig = async (): Promise<void> => {
     config = await readConfig();
-    bridge.notify({ type: "config", defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs });
+    bridge.notify(configMessage());
   };
+  bridge.on("connected", (connection: ExtensionConnection, hello: ExtHello) => {
+    log(`${browserLabel(connection.name)} connected (extension ${connection.version})`);
+    void (async () => {
+      await announceConfig();
+      if (typeof hello.historyClearedAt === "number") await history.clearBefore(hello.historyClearedAt);
+      connection.send({ type: "history", runs: await history.list() });
+    })().catch((error) => log(`could not send run history: ${error instanceof Error ? error.message : String(error)}`));
+  });
+  bridge.on("disconnected", (connection: ExtensionConnection) => {
+    log(`${browserLabel(connection.name)} disconnected`);
+    bridge.notify(configMessage());
+  });
   bridge.on("set-keep-tabs", (keep: unknown) => {
     if (typeof keep !== "boolean") return;
     void writeConfig({ keepTabs: keep })
@@ -110,8 +114,9 @@ export async function runDaemon(options: { port: number; version: string }): Pro
   }
   log(`listening for the extension on ws://127.0.0.1:${options.port}/ext`);
 
-  let queue: Promise<void> = Promise.resolve();
-  let running = false;
+  let admission: Promise<void> = Promise.resolve();
+  const queues = new Map<string, Promise<void>>();
+  let running = 0;
 
   const status = (): DaemonStatus => ({
     type: "status",
@@ -120,19 +125,20 @@ export async function runDaemon(options: { port: number; version: string }): Pro
     uptimeMs: Date.now() - startedAt,
     extensionConnected: bridge.connected,
     extensionVersion: bridge.extensionVersion,
-    running,
+    browsers: bridge.browsers(),
+    running: running > 0,
     headlessRunning: headless.connected,
     defaultBrowser: config.defaultBrowser,
     keepTabs: config.keepTabs,
   });
 
-  const handleRun = async (socket: net.Socket, request: Extract<CliRequest, { type: "run" }>): Promise<void> => {
+  const handleRun = async (socket: net.Socket, request: Extract<CliRequest, { type: "run" }>, browser: string): Promise<void> => {
     const runDir = path.join(RUNS_DIR, `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomBytes(3).toString("hex")}`);
     await fs.mkdir(runDir, { recursive: true });
     config = await readConfig();
-    const browser = isBrowser(request.browser) ? request.browser : config.defaultBrowser;
     let backend: BrowserBackend;
-    if (browser === "headless") {
+    let target: ExtensionConnection | undefined;
+    if (isHeadless(browser)) {
       try {
         await headless.acquire();
       } catch (error) {
@@ -141,22 +147,21 @@ export async function runDaemon(options: { port: number; version: string }): Pro
       }
       backend = headless;
     } else {
-      if (!(await bridge.waitForConnection(EXTENSION_WAIT_MS))) {
-        write(socket, {
-          type: "done",
-          ok: false,
-          error: "Chrome extension is not connected. Load dist/extension in Chrome and keep Chrome open, then retry (`apart doctor` explains the steps), or run with --headless.",
-          elapsedMs: 0,
-          runDir,
-        });
+      target = (await bridge.waitForConnection(EXTENSION_WAIT_MS, browser)) ? bridge.connection(browser) : undefined;
+      if (!target) {
+        const others = bridge.browsers().map((item) => item.name);
+        const hint = others.length
+          ? ` Connected: ${others.join(", ")}. Run with --browser ${others[0]}, or make it the default with apart config default-browser ${others[0]}.`
+          : " Load dist/extension in it and keep it open (`apart doctor` explains the steps), or run with --headless.";
+        write(socket, { type: "done", ok: false, error: `${browserLabel(browser)} is not connected.${hint}`, elapsedMs: 0, runDir });
         return;
       }
-      backend = bridge;
+      backend = target;
     }
-    running = true;
+    running += 1;
     const runId = path.basename(runDir);
     const startedAt = Date.now();
-    if (browser === "chrome") bridge.notify({ type: "run-started", run: { id: runId, startedAt } });
+    target?.send({ type: "run-started", run: { id: runId, startedAt } });
     const timeoutMs = Math.min(Math.max(request.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS, 1000), MAX_SCRIPT_TIMEOUT_MS);
     log(`${browser} run started (${request.code.length} chars, ${timeoutMs}ms budget) in ${runDir}`);
     try {
@@ -165,7 +170,7 @@ export async function runDaemon(options: { port: number; version: string }): Pro
         runDir,
         timeoutMs,
         bridge: backend,
-        keepTabs: browser === "chrome" && config.keepTabs,
+        keepTabs: Boolean(target) && config.keepTabs,
         emit: (text) => write(socket, { type: "out", text }),
       });
       write(socket, { type: "done", ok: result.ok, error: result.error, elapsedMs: result.elapsedMs, runDir });
@@ -174,11 +179,11 @@ export async function runDaemon(options: { port: number; version: string }): Pro
         const record: RunRecord = { id: runId, browser, startedAt, elapsedMs: result.elapsedMs, ok: result.ok, error: result.error, urls: result.urls, tabsOpened: result.tabsOpened };
         await history.add(record).catch((error) => log(`could not save run history: ${error instanceof Error ? error.message : String(error)}`));
         bridge.notify({ type: "run-finished", run: record });
-      } else if (browser === "chrome") bridge.notify({ type: "run-ended", id: runId });
+      } else target?.send({ type: "run-ended", id: runId });
       log(`run finished ok=${result.ok} in ${result.elapsedMs}ms${result.error ? `: ${result.error}` : ""}`);
     } finally {
-      running = false;
-      if (browser === "headless") headless.release();
+      running -= 1;
+      if (isHeadless(browser)) headless.release();
       void pruneRuns();
     }
   };
@@ -220,8 +225,17 @@ export async function runDaemon(options: { port: number; version: string }): Pro
           socket.end();
           void shutdown();
         } else if (request.type === "run") {
-          queue = queue.then(() => handleRun(socket, request)).catch((error) => {
-            write(socket, { type: "done", ok: false, error: error instanceof Error ? error.message : String(error), elapsedMs: 0, runDir: "" });
+          admission = admission.then(async () => {
+            const browser = isBrowser(request.browser) ? request.browser : (await readConfig()).defaultBrowser;
+            const next = (queues.get(browser) ?? Promise.resolve())
+              .then(() => handleRun(socket, request, browser))
+              .catch((error) => {
+                write(socket, { type: "done", ok: false, error: error instanceof Error ? error.message : String(error), elapsedMs: 0, runDir: "" });
+              });
+            queues.set(browser, next);
+            void next.then(() => {
+              if (queues.get(browser) === next) queues.delete(browser);
+            });
           });
         }
       }

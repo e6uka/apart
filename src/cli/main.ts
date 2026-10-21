@@ -6,7 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { findChrome } from "../daemon/headless";
-import { BROWSERS, isBrowser, readConfig, writeConfig } from "../shared/config";
+import { browserLabel, HEADLESS } from "../shared/browsers";
+import { isBrowser, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, LOG_DIR, SOCKET_PATH } from "../shared/paths";
 import { DEFAULT_PORT, allowedExtensionIds, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
 
@@ -24,9 +25,10 @@ Usage:
   apart repl '<javascript>'        Run a Playwright-style script against Chrome (exit code is always 0)
   apart repl --file script.js      Read the script from a file ("-" reads stdin)
   apart repl ... --timeout <ms>    Script time budget (default 120000, max 600000)
-  apart repl ... --headless        Use a hidden Chrome apart starts itself, signed out
-  apart repl ... --chrome          Use your own Chrome, through the extension
-  apart config default-browser chrome|headless
+  apart repl ... --browser <name>  Use a connected browser (chrome, arc, ...) or headless for this run
+  apart repl ... --headless        Same as --browser headless: a hidden Chrome apart starts itself
+  apart repl ... --chrome          Same as --browser chrome
+  apart config default-browser <name>
                                    Which one repl uses without a flag (also in the extension's settings)
   apart config keep-tabs on|off    Leave tabs in your Chrome open when a script ends
   apart daemon start|stop|status   Manage the background daemon (started on demand by repl)
@@ -55,7 +57,7 @@ function parseFlags(args: string[]): { positional: string[]; flags: Map<string, 
     if (arg.startsWith("--")) {
       const [name, inline] = arg.slice(2).split("=", 2);
       if (inline !== undefined) flags.set(name, inline);
-      else if (["file", "timeout", "port"].includes(name) && i + 1 < args.length) flags.set(name, args[++i]);
+      else if (["file", "timeout", "port", "browser"].includes(name) && i + 1 < args.length) flags.set(name, args[++i]);
       else flags.set(name, true);
     } else positional.push(arg);
   }
@@ -171,7 +173,12 @@ async function commandRepl(positional: string[], flags: Map<string, string | tru
     console.log(`[error ${error instanceof Error ? error.message : String(error)}]`);
     return;
   }
-  const browser = flags.has("headless") ? "headless" : flags.has("chrome") ? "chrome" : undefined;
+  const chosen = flags.get("browser");
+  if (chosen !== undefined && !isBrowser(chosen)) {
+    console.log("[error --browser needs a browser name, such as chrome, arc or headless]");
+    return;
+  }
+  const browser = typeof chosen === "string" ? chosen : flags.has("headless") ? HEADLESS : flags.has("chrome") ? "chrome" : undefined;
   await talk(socket, { type: "run", code, timeoutMs, browser }, (message) => {
     if (message.type === "out") process.stdout.write(`${message.text}\n`);
     else if (message.type === "done") {
@@ -223,8 +230,8 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
     return 1;
   }
   console.log(`daemon: running (pid ${status.pid}, port ${status.port}, up ${Math.round(status.uptimeMs / 1000)}s${status.running ? ", script running" : ""})`);
-  console.log(`extension: ${status.extensionConnected ? `connected (version ${status.extensionVersion})` : "not connected"}`);
-  console.log(`default browser: ${status.defaultBrowser === "headless" ? "headless" : "your Chrome"}`);
+  console.log(`browsers: ${status.browsers.length ? status.browsers.map((item) => `${item.name} (extension ${item.version})`).join(", ") : "none connected"}`);
+  console.log(`default browser: ${status.defaultBrowser}`);
   console.log(`tabs at script end: ${status.keepTabs ? "left open" : "closed"}`);
   console.log(`headless chrome: ${status.headlessRunning ? "running" : "not running (starts on the next --headless run)"}`);
   return status.extensionConnected ? 0 : 1;
@@ -250,14 +257,14 @@ async function commandConfig(positional: string[]): Promise<number> {
       return 0;
     }
     if (!isBrowser(value)) {
-      console.error(`default-browser must be one of: ${BROWSERS.join(", ")}`);
+      console.error("default-browser must be a browser name such as chrome, arc or headless (see apart daemon status)");
       return 2;
     }
     await writeConfig({ defaultBrowser: value });
     await notifyConfigChanged();
-    console.log(value === "headless"
-      ? "apart repl now uses headless Chrome by default. Add --chrome to use your own Chrome for one run."
-      : "apart repl now uses your Chrome by default. Add --headless for a hidden, signed-out browser.");
+    console.log(value === HEADLESS
+      ? "apart repl now uses headless Chrome by default. Add --browser <name> to use one of your browsers for one run."
+      : `apart repl now uses ${browserLabel(value)} by default. Add --headless or --browser <name> to use another for one run.`);
     return 0;
   }
   if (key === "keep-tabs") {
@@ -306,7 +313,7 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   const chrome = ["/Applications/Google Chrome.app", "/Applications/Chromium.app", "/Applications/Google Chrome Canary.app"].find((app) => existsSync(app));
   check(Boolean(chrome) || process.platform !== "darwin", chrome ? `Chrome at ${chrome}` : "Chrome installed", "install Google Chrome or Chromium");
   const config = await readConfig();
-  lines.push(`info     default browser: ${config.defaultBrowser === "headless" ? "headless" : "your Chrome"}${config.saved ? "" : " (not chosen yet)"}; change with apart config default-browser chrome|headless`);
+  lines.push(`info     default browser: ${config.defaultBrowser}${config.saved ? "" : " (not chosen yet)"}; change with apart config default-browser <name>`);
   const headlessChrome = findChrome();
   if (headlessChrome) lines.push(`ok       headless runs use ${headlessChrome} (profile ${HEADLESS_PROFILE_DIR})`);
   else if (config.defaultBrowser === "headless") check(false, "Chrome for headless runs", "install Google Chrome or Chromium, or set APART_CHROME to its executable");
@@ -323,10 +330,12 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   }
   if (status) {
     check(true, `daemon running (pid ${status.pid}, port ${status.port})`);
-    const loadExtension = `in Chrome open chrome://extensions, turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`;
-    if (!status.extensionConnected && config.defaultBrowser === "headless") lines.push(`info     extension not connected; only needed for --chrome runs\n         → ${loadExtension}`);
-    else check(status.extensionConnected, status.extensionConnected ? `extension connected (version ${status.extensionVersion})` : "extension not connected",
-      `in Chrome open chrome://extensions, turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`);
+    const loadExtension = `in Chrome or Arc open chrome://extensions, turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`;
+    for (const item of status.browsers) lines.push(`ok       ${browserLabel(item.name)} connected as "${item.name}" (extension ${item.version})`);
+    const defaultConnected = config.defaultBrowser === HEADLESS || status.browsers.some((item) => item.name === config.defaultBrowser);
+    if (status.browsers.length === 0 && config.defaultBrowser === HEADLESS) lines.push(`info     no browser connected; only needed for --browser runs\n         → ${loadExtension}`);
+    else if (status.browsers.length === 0) check(false, "no browser connected", loadExtension);
+    else if (!defaultConnected) check(false, `the default browser, ${config.defaultBrowser}, is not connected`, `open it with the extension loaded, or pick a connected one: apart config default-browser ${status.browsers[0].name}`);
   }
   console.log(lines.join("\n"));
   console.log(problems === 0 ? "\nAll good. Try: apart repl 'const pg = await openTab(\"https://example.com\"); console.log(await pg.title()); await closeTab(pg);'" : `\n${problems} problem${problems === 1 ? "" : "s"} found.`);

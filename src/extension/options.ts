@@ -1,5 +1,6 @@
+import { HEADLESS, isExtensionBrowserName } from "../shared/browsers";
 import { DEFAULT_PORT, type RunBrowser } from "../shared/protocol";
-import { bindStatusActions, connectionState, escapeHtml, icon, onStateChange, readState, renderStatusCard, type ExtensionState } from "./ui/common";
+import { bindStatusActions, browserLabel, connectionState, escapeHtml, icon, onStateChange, readState, renderStatusCard, type ExtensionState } from "./ui/common";
 
 const statusRoot = document.getElementById("status") as HTMLElement;
 const form = document.getElementById("port-form") as HTMLFormElement;
@@ -9,13 +10,79 @@ const portMessage = document.getElementById("port-message") as HTMLParagraphElem
 const clearRow = document.getElementById("clear-row") as HTMLDivElement;
 const browserChoices = document.getElementById("browser-choices") as HTMLFieldSetElement;
 const browserMessage = document.getElementById("browser-message") as HTMLParagraphElement;
+const browserList = document.getElementById("browser-list") as HTMLDivElement;
+const nameForm = document.getElementById("name-form") as HTMLFormElement;
+const nameInput = document.getElementById("browser-name") as HTMLInputElement;
+const nameMessage = document.getElementById("name-message") as HTMLParagraphElement;
 const tabsChoices = document.getElementById("tabs-choices") as HTMLFieldSetElement;
 const tabsMessage = document.getElementById("tabs-message") as HTMLParagraphElement;
 const keepTabsInput = tabsChoices.querySelector<HTMLInputElement>("input[name=keep-tabs]")!;
 
 let portLoaded = false;
-const SAVED_LABELS: Record<RunBrowser, string> = { chrome: "your Chrome", headless: "headless Chrome" };
 let pendingBrowser: RunBrowser | null = null;
+let shownChoices = "";
+let nameLoaded = false;
+let pendingName: string | null = null;
+let nameSavedAt = 0;
+
+function savedLabel(browser: RunBrowser): string {
+  return browser === HEADLESS ? "headless Chrome" : browserLabel(browser);
+}
+
+function choiceDescription(name: string, state: ExtensionState): string {
+  if (name === HEADLESS) return "A hidden Chrome apart starts itself, signed out. Its runs still show in Activity.";
+  if (!(state.browsers ?? []).includes(name)) return "Not connected right now. Runs wait for it, then fail if it does not connect.";
+  if (name === state.browser) return "This browser. Signed in as you, in the pink apart group, so you can watch it work.";
+  return "Signed in as you, in that browser.";
+}
+
+function renderBrowserChoices(state: ExtensionState): void {
+  const names = Array.from(new Set([...(state.browsers ?? []), ...(state.defaultBrowser ? [state.defaultBrowser] : []), HEADLESS]));
+  const key = JSON.stringify([names, state.browser, state.browsers]);
+  if (key !== shownChoices) {
+    shownChoices = key;
+    browserList.innerHTML = names.map((name) => `<label class="choice"><input type="radio" name="browser" value="${escapeHtml(name)}"><span><strong>${escapeHtml(browserLabel(name))}</strong><span>${escapeHtml(choiceDescription(name, state))}</span><code>--browser ${escapeHtml(name)}</code></span></label>`).join("");
+  }
+}
+
+function renderName(state: ExtensionState): void {
+  if (!nameLoaded) {
+    nameInput.value = state.browserName ?? "";
+    nameLoaded = true;
+  }
+  const reconnected = (state.status?.at ?? 0) > nameSavedAt && connectionState(state) !== "disconnected";
+  if (pendingName !== null && reconnected && state.browser && (!pendingName || state.browser === pendingName)) {
+    nameMessage.className = "message ok";
+    nameMessage.textContent = `Saved. Scripts reach this browser with --browser ${state.browser}.`;
+    pendingName = null;
+  }
+}
+
+nameForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const value = nameInput.value.trim().toLowerCase();
+  if (value && (!isExtensionBrowserName(value))) {
+    nameInput.setAttribute("aria-invalid", "true");
+    nameMessage.className = "message error";
+    nameMessage.textContent = value === HEADLESS ? "headless is taken by apart's own browser. Choose another name." : "Use up to 32 lowercase letters, digits and hyphens, starting with a letter or digit.";
+    nameInput.focus();
+    return;
+  }
+  nameInput.removeAttribute("aria-invalid");
+  nameInput.value = value;
+  pendingName = value;
+  nameSavedAt = Date.now();
+  nameMessage.className = "message";
+  nameMessage.textContent = "Saving and reconnecting…";
+  try {
+    if (value) await chrome.storage.local.set({ browserName: value });
+    else await chrome.storage.local.remove("browserName");
+  } catch (error) {
+    pendingName = null;
+    nameMessage.className = "message error";
+    nameMessage.textContent = `Could not save: ${error instanceof Error ? error.message : String(error)}`;
+  }
+});
 let pendingTimer: number | undefined;
 let pendingKeepTabs: boolean | null = null;
 let keepTabsTimer: number | undefined;
@@ -74,17 +141,18 @@ function renderBrowser(state: ExtensionState): void {
   if (pendingBrowser && state.defaultBrowser === pendingBrowser) {
     window.clearTimeout(pendingTimer);
     browserMessage.className = "message ok";
-    browserMessage.textContent = `Saved. Runs now use ${SAVED_LABELS[pendingBrowser]} unless they ask for the other one.`;
+    browserMessage.textContent = `Saved. Runs now use ${savedLabel(pendingBrowser)} unless they ask for another browser.`;
     pendingBrowser = null;
   }
   if (pendingBrowser) return;
+  renderBrowserChoices(state);
   browserChoices.disabled = !live || state.defaultBrowser === null;
   browserChoices.querySelectorAll<HTMLInputElement>("input[name=browser]").forEach((input) => {
     input.checked = input.value === state.defaultBrowser;
   });
   if (!live) {
     browserMessage.className = "message";
-    browserMessage.textContent = "Connect apart to change this here, or run apart config default-browser chrome|headless in your terminal.";
+    browserMessage.textContent = "Connect apart to change this here, or run apart config default-browser <name> in your terminal.";
   } else if (state.defaultBrowser === null) {
     browserMessage.className = "message";
     browserMessage.textContent = "This apart version cannot change it from here. Update apart, then run apart daemon restart.";
@@ -126,6 +194,7 @@ async function render(): Promise<void> {
     renderStatusCard(statusRoot, state);
     renderBrowser(state);
     renderTabs(state);
+    renderName(state);
     if (!portLoaded) {
       portInput.value = String(state.port ?? DEFAULT_PORT);
       portInput.disabled = false;
