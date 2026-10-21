@@ -104,12 +104,31 @@ function toInfo(tab: chrome.tabs.Tab): TabInfo {
   return { tabId: tab.id ?? -1, url: tab.url ?? tab.pendingUrl ?? "", title: tab.title ?? "", active: Boolean(tab.active), windowId: tab.windowId };
 }
 
+const BROWSER_CALL_TIMEOUT_MS = 5000;
+const RESTRICTED_ABOUT = /^about:(?!blank$)/i;
+
+function within<T>(promise: Promise<T>, what: string, ms = BROWSER_CALL_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`The browser did not answer ${what} within ${ms / 1000}s`)), ms);
+    }),
+  ]);
+}
+
+function assertNavigable(url: unknown): void {
+  if (typeof url === "string" && RESTRICTED_ABOUT.test(url)) {
+    throw new Error(`Browsers do not let extensions control ${url}; only about:blank works here. Use --headless for other about: pages.`);
+  }
+}
+
 async function pickWindowId(): Promise<number> {
-  const focused = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
+  const focused = await within(chrome.windows.getLastFocused({ windowTypes: ["normal"] }), "windows.getLastFocused").catch(() => null);
   if (focused?.id !== undefined) return focused.id;
-  const all = await chrome.windows.getAll({ windowTypes: ["normal"] });
+  const all = await within(chrome.windows.getAll({ windowTypes: ["normal"] }), "windows.getAll");
   if (all[0]?.id !== undefined) return all[0].id;
-  const created = await chrome.windows.create({ focused: false });
+  const created = await within(chrome.windows.create({ focused: false }), "windows.create");
   if (created?.id === undefined) throw new Error("Could not find or create a browser window");
   return created.id;
 }
@@ -117,9 +136,9 @@ async function pickWindowId(): Promise<number> {
 async function groupTab(tab: chrome.tabs.Tab): Promise<void> {
   if (tab.id === undefined || !chrome.tabGroups) return;
   try {
-    const existing = await chrome.tabGroups.query({ title: GROUP_TITLE, windowId: tab.windowId });
-    const groupId = await chrome.tabs.group({ tabIds: tab.id, ...(existing[0] ? { groupId: existing[0].id } : {}) });
-    if (!existing[0]) await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: "pink", collapsed: false });
+    const existing = await within(chrome.tabGroups.query({ title: GROUP_TITLE, windowId: tab.windowId }), "tabGroups.query");
+    const groupId = await within(chrome.tabs.group({ tabIds: tab.id, ...(existing[0] ? { groupId: existing[0].id } : {}) }), "tabs.group");
+    if (!existing[0]) await within(chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: "pink", collapsed: false }), "tabGroups.update");
   } catch {
     return;
   }
@@ -166,13 +185,15 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
     case "tabs.list":
       return (await chrome.tabs.query({})).filter((tab) => tab.id !== undefined).map(toInfo);
     case "tabs.create": {
+      const url = String(params.url ?? "about:blank");
+      assertNavigable(url);
       const windowId = await pickWindowId();
-      const [previous] = await chrome.tabs.query({ active: true, windowId });
-      const tab = await chrome.tabs.create({ url: String(params.url ?? "about:blank"), active: true, windowId });
-      if (tab.id === undefined) throw new Error("Chrome did not return a tab id");
+      const [previous] = await within(chrome.tabs.query({ active: true, windowId }), "tabs.query").catch(() => [] as chrome.tabs.Tab[]);
+      const tab = await within(chrome.tabs.create({ url, active: true, windowId }), "tabs.create", 15000);
+      if (tab.id === undefined) throw new Error("The browser did not return a tab id");
       createdTabs.add(tab.id);
       if (previous?.id !== undefined) returnTo.set(tab.id, previous.id);
-      await groupTab(tab);
+      void groupTab(tab);
       return toInfo(tab);
     }
     case "tabs.close": {
@@ -210,6 +231,7 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       await detachTab(Number(params.tabId));
       return true;
     case "debugger.send": {
+      if (params.method === "Page.navigate") assertNavigable((params.params as { url?: unknown } | undefined)?.url);
       const target: chrome.debugger.DebuggerSession = typeof params.sessionId === "string" ? { tabId: Number(params.tabId), sessionId: params.sessionId } : { tabId: Number(params.tabId) };
       return chrome.debugger.sendCommand(target, String(params.method), params.params ?? {});
     }
