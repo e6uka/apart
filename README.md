@@ -122,7 +122,7 @@ Each `repl` call is a fresh session. Variables do not persist between calls, and
 
 - `page` — the most recently opened or attached tab (`null` if none)
 - `tabs` — all tabs attached in this session
-- `openTab(url)` → `Page` — open a tab in the "apart" group, switch to it in your Chrome (headless has nothing to switch), and wait for it to load
+- `openTab(url, { newTab? })` → `Page` — open a tab in the "apart" group, switch to it in your Chrome (headless has nothing to switch), and wait for it to load. If an earlier run left a tab for the same site open in the group (`linkedin.com` and `www.linkedin.com` count as one site), apart switches to that tab and loads `url` there instead of opening another. Pass `{ newTab: true }` to always open a new one.
 - `closeTab(page)` — close a tab you opened (a borrowed tab is only detached). Tabs left open close when the script ends, unless `keep-tabs` is on.
 - `listBrowserTabs()` → `[{ targetId, url, title, active }]` — tabs already open in Chrome
 - `attachBrowserTab(targetId)`, `attachActiveBrowserTab()` → `Page` — work in an existing tab

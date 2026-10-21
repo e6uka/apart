@@ -23,6 +23,10 @@ export interface RunResult {
   tabsOpened: number;
 }
 
+export interface OpenTabOptions {
+  newTab?: boolean;
+}
+
 export interface BrowserTab {
   targetId: string;
   url: string;
@@ -74,11 +78,14 @@ class Session {
 
   constructor(private readonly bridge: BrowserBackend, private readonly runDir: string, private readonly log: (text: string) => void = () => undefined) {}
 
-  async openTab(url = "about:blank"): Promise<Page> {
+  async openTab(url = "about:blank", options: OpenTabOptions = {}): Promise<Page> {
     this.assertActive();
-    const info = await this.bridge.request<TabInfo>("tabs.create", { url: "about:blank" });
-    this.tabsOpened += 1;
-    const page = await this.attach(info.tabId, "owned", "about:blank");
+    const reused = url !== "about:blank" && !options.newTab
+      ? await this.bridge.request<TabInfo | null>("tabs.reuse", { url }).catch(() => null)
+      : null;
+    const info = reused ?? await this.bridge.request<TabInfo>("tabs.create", { url: "about:blank" });
+    if (!reused) this.tabsOpened += 1;
+    const page = await this.attach(info.tabId, "owned", reused ? info.url : "about:blank");
     if (url !== "about:blank") {
       await page.goto(url).catch((error) => {
         if (!isErrorLike(error) || error.name !== "TimeoutError") throw error;
@@ -202,7 +209,7 @@ export async function runScript(options: RunOptions): Promise<RunResult> {
     console: { log: print, info: print, warn: print, error: print, debug: print },
     display,
     tabs: session.tabs,
-    openTab: (url?: string) => session.openTab(url),
+    openTab: (url?: string, openOptions?: OpenTabOptions) => session.openTab(url, openOptions),
     closeTab: (page: Page) => session.closeTab(page),
     listBrowserTabs: () => session.listBrowserTabs(),
     attachBrowserTab: (targetId: string) => session.attachBrowserTab(targetId),
