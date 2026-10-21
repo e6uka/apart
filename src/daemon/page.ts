@@ -53,6 +53,20 @@ const PAPER_SIZES: Record<string, [number, number]> = {
 };
 const UNFILLABLE_INPUTS = ["checkbox", "radio", "file", "button", "submit", "reset", "image"];
 const PAGE_EVENTS: PageEvent[] = ["dialog", "download"];
+const HIT_TEST = `function(px, py) {
+  const rect = this.getBoundingClientRect();
+  const x = px == null ? rect.left + rect.width / 2 : rect.left + px;
+  const y = py == null ? rect.top + rect.height / 2 : rect.top + py;
+  let hit = this.ownerDocument.elementFromPoint(x, y);
+  while (hit && hit.shadowRoot) {
+    const inner = hit.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === hit) break;
+    hit = inner;
+  }
+  if (!hit) return "nothing (the point is outside the page)";
+  for (let node = hit; node; node = node.parentNode || node.host) if (node === this) return "";
+  return "<" + __apart.describe(hit) + ">";
+}`;
 const MAX_FRAMES_PER_SNAPSHOT = 20;
 const MAX_FRAME_DEPTH = 4;
 const CHILD_FRAME_MAX_ENTRIES = 500;
@@ -1144,9 +1158,20 @@ export class Locator {
     }
   }
 
-  async click(options: { button?: "left" | "right" | "middle"; clickCount?: number; timeout?: number; position?: { x: number; y: number }; modifiers?: string[] } = {}): Promise<void> {
+  async click(options: { button?: "left" | "right" | "middle"; clickCount?: number; timeout?: number; position?: { x: number; y: number }; modifiers?: string[]; force?: boolean } = {}): Promise<void> {
+    const timeout = options.timeout ?? LOCATOR_TIMEOUT_MS;
+    const deadline = Date.now() + timeout;
     await this.withElement(async (handle) => {
-      const point = await this.clickPoint(handle, options.position, true);
+      let point = await this.clickPoint(handle, options.position, true);
+      for (let attempt = 0; !options.force; attempt++) {
+        const covering = (await this.call(handle, HIT_TEST, [options.position?.x ?? null, options.position?.y ?? null])) as string;
+        if (!covering) break;
+        if (Date.now() > deadline) {
+          throw new Error(`${this.describe()} is covered by ${covering} at the point apart would click, so the click would not reach it. Scroll or close what covers it, or pass { force: true }.`);
+        }
+        await sleep(POLL_INTERVALS_MS[Math.min(attempt, POLL_INTERVALS_MS.length - 1)]);
+        point = await this.clickPoint(handle, options.position, true);
+      }
       const modifiers = (options.modifiers ?? []).reduce((bits, name) => bits | keyDescriptor(`${name}+a`).modifiers & ~8, 0);
       await this.page.mouseClick(point.x, point.y, { button: options.button, clickCount: options.clickCount, modifiers }, handle.ctx?.sessionId);
     }, options.timeout);

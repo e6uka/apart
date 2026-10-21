@@ -38,6 +38,7 @@ function pages(port: number): Record<string, { type: string; body: string; heade
         <input id="file" type="file" multiple onchange="document.getElementById('files').textContent = [...this.files].map(f => f.name + ':' + f.size + ':' + f.type).join(',')">
         <p id="files">no files</p>
         <a id="dl" href="/report">Export</a>
+        <div style="position:relative;display:inline-block"><button id="under" onclick="this.textContent = 'reached'">Under</button><div id="cover" style="position:absolute;inset:0;background:#fff"></div></div>
         <iframe id="same" title="Same" src="/child" width="420" height="220"></iframe>
         <iframe id="cross" title="Cross" src="http://localhost:${port}/child" width="420" height="220"></iframe>`,
     },
@@ -105,6 +106,8 @@ const SCRIPT = (url: string) => `
   const [blob] = await Promise.all([pg.waitForEvent("download"), pg.click("#blob")]);
   console.log("BLOB=" + blob.suggestedFilename() + " " + JSON.stringify(await fs.readFile(await blob.path(), "utf8")));
 
+  try { await pg.locator("#under").click({ timeout: 500 }); console.log("COVERED=clicked"); } catch (e) { console.log("COVERED=" + e.message.slice(0, 60)); }
+
   const shot = await annotatedScreenshot(pg);
   console.log("ANNOTATED=" + (shot.refCount > 4));
   await closeTab(pg);
@@ -135,6 +138,7 @@ function expectFeatures(text: string): void {
   expect(text).toContain("ESCAPE=PathEscapesRunDirError");
   expect(text).toContain('DOWNLOAD=report.csv downloads/report.csv "a,b\\n1,2\\n"');
   expect(text).toContain('BLOB=hello.txt "hello"');
+  expect(text).toContain('COVERED=locator(css=#under) is covered by <div> at the point a');
   expect(text).toContain("ANNOTATED=true");
 }
 
