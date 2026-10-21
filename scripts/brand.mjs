@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { crc32, deflateSync } from "node:zlib";
 import { Resvg } from "@resvg/resvg-js";
 import opentype from "opentype.js";
 
@@ -141,6 +142,35 @@ function png(svg, width) {
   return new Resvg(svg, { fitTo: { mode: "width", value: width }, background: "rgba(0,0,0,0)" }).render().asPng();
 }
 
+function opaquePng(svg, width) {
+  const image = new Resvg(svg, { fitTo: { mode: "width", value: width }, background: "#ffffff" }).render();
+  const rows = Buffer.alloc(image.height * (image.width * 3 + 1));
+  for (let y = 0; y < image.height; y++) {
+    const row = y * (image.width * 3 + 1);
+    for (let x = 0; x < image.width; x++) {
+      image.pixels.copy(rows, row + 1 + x * 3, (y * image.width + x) * 4, (y * image.width + x) * 4 + 3);
+    }
+  }
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(image.width, 0);
+  header.writeUInt32BE(image.height, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(rows)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
 mkdirSync(BRAND_DIR, { recursive: true });
 mkdirSync(ICON_DIR, { recursive: true });
 
@@ -153,7 +183,7 @@ writeFileSync(path.join(BRAND_DIR, "mark-light.png"), png(markSvg("light", { siz
 writeFileSync(path.join(BRAND_DIR, "social-preview.svg"), socialSvg());
 writeFileSync(path.join(BRAND_DIR, "social-preview.png"), png(socialSvg(), 1280));
 mkdirSync("design/store", { recursive: true });
-writeFileSync("design/store/promo-tile-440x280.png", png(promoSvg(), 440));
+writeFileSync("design/store/promo-tile-440x280.png", opaquePng(promoSvg(), 440));
 writeFileSync("design/store/icon-128.png", png(markSvg("light", { size: 128, viewBox: "-8 -8 144 144" }), 128));
 
 const ICONS = [
