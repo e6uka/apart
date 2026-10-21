@@ -153,16 +153,37 @@ function siteOf(url: string | undefined): string | null {
   }
 }
 
+async function keptTabIds(): Promise<number[]> {
+  const { keptTabs } = await chrome.storage.session.get("keptTabs").catch(() => ({ keptTabs: [] }));
+  return Array.isArray(keptTabs) ? keptTabs : [];
+}
+
+function updateKeptTabs(change: (ids: number[]) => number[]): Promise<unknown> {
+  storageQueue = storageQueue.then(async () => {
+    const ids = await keptTabIds();
+    await chrome.storage.session.set({ keptTabs: change(ids) });
+  }).catch(() => undefined);
+  return storageQueue;
+}
+
 async function findReusableTab(url: string, windowId: number): Promise<chrome.tabs.Tab | null> {
   const site = siteOf(url);
-  if (!site || !chrome.tabGroups) return null;
-  const groups = await within(chrome.tabGroups.query({ title: GROUP_TITLE, windowId }), "tabGroups.query").catch(() => []);
-  const candidates: chrome.tabs.Tab[] = [];
-  for (const group of groups) {
-    const members = await within(chrome.tabs.query({ groupId: group.id }), "tabs.query").catch(() => [] as chrome.tabs.Tab[]);
-    candidates.push(...members.filter((tab) => tab.id !== undefined && !attachedTabs.has(tab.id) && !createdTabs.has(tab.id) && siteOf(tab.url || tab.pendingUrl) === site));
+  if (!site) return null;
+  const candidates = new Map<number, chrome.tabs.Tab>();
+  if (chrome.tabGroups) {
+    const groups = await within(chrome.tabGroups.query({ title: GROUP_TITLE, windowId }), "tabGroups.query").catch(() => []);
+    for (const group of groups) {
+      const members = await within(chrome.tabs.query({ groupId: group.id }), "tabs.query").catch(() => [] as chrome.tabs.Tab[]);
+      for (const tab of members) if (tab.id !== undefined) candidates.set(tab.id, tab);
+    }
   }
-  return candidates.sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0] ?? null;
+  for (const tabId of await keptTabIds()) {
+    const tab = await within(chrome.tabs.get(tabId), "tabs.get").catch(() => null);
+    if (tab?.id !== undefined && tab.windowId === windowId) candidates.set(tab.id, tab);
+  }
+  return Array.from(candidates.values())
+    .filter((tab) => !attachedTabs.has(tab.id!) && !createdTabs.has(tab.id!) && siteOf(tab.url || tab.pendingUrl) === site)
+    .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0] ?? null;
 }
 
 async function detachTab(tabId: number): Promise<void> {
@@ -226,6 +247,8 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       const [previous] = await within(chrome.tabs.query({ active: true, windowId }), "tabs.query").catch(() => [] as chrome.tabs.Tab[]);
       const updated = await within(chrome.tabs.update(tab.id, { active: true }), "tabs.update");
       createdTabs.add(tab.id);
+      const reusedId = tab.id;
+      await updateKeptTabs((ids) => ids.filter((id) => id !== reusedId));
       if (previous?.id !== undefined && previous.id !== tab.id) returnTo.set(tab.id, previous.id);
       return toInfo(updated ?? tab);
     }
@@ -240,6 +263,7 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       await detachTab(tabId);
       createdTabs.delete(tabId);
       returnTo.delete(tabId);
+      await updateKeptTabs((ids) => [...ids.filter((id) => id !== tabId), tabId]);
       return true;
     }
     case "tabs.active": {
@@ -426,6 +450,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   createdTabs.delete(tabId);
   returnTo.delete(tabId);
   attachedTabs.delete(tabId);
+  void updateKeptTabs((ids) => ids.filter((id) => id !== tabId));
 });
 
 void ensureAlarm();
