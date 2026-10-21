@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "apart",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Lets apart, running on this computer, drive tabs it opens in this browser.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsLx/aZVH7s7PhwRWmCkhTLRfYgmt2glVA/N8wYWgQdCDE+IBkif6yVV4Nk9B86Vz1/15Tlkss1owkr6JVz6QQyUG+Z7w2d0xWF1/PZicqkg0KAV6dVE8TSU+Yv2JCP6QG8B83dRHAs/EeoyRyS+88eByX/OViQiignHOAZoJg0TrqIl3nBSC/VCi4xuBWgm1q+mhY8zezIzh9hbhoOD5apSgRhkcwhMwIboAUuHDBHXoCZNuKDsskHVT/k9lJv6uWgbEWO4lY5IuR1ZuY/fG0TuHgsJD43MWs55xY7f9Ah/Fhfrmxr+hM0D1p/5rTPgNeHxhMsdLE1UUQR8w99iYcwIDAQAB",
   "permissions": [

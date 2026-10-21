@@ -144,6 +144,27 @@ async function groupTab(tab: chrome.tabs.Tab): Promise<void> {
   }
 }
 
+function siteOf(url: string | undefined): string | null {
+  try {
+    const parsed = new URL(url ?? "");
+    return /^https?:$/.test(parsed.protocol) ? parsed.hostname.replace(/^www\./, "") : null;
+  } catch {
+    return null;
+  }
+}
+
+async function findReusableTab(url: string, windowId: number): Promise<chrome.tabs.Tab | null> {
+  const site = siteOf(url);
+  if (!site || !chrome.tabGroups) return null;
+  const groups = await within(chrome.tabGroups.query({ title: GROUP_TITLE, windowId }), "tabGroups.query").catch(() => []);
+  const candidates: chrome.tabs.Tab[] = [];
+  for (const group of groups) {
+    const members = await within(chrome.tabs.query({ groupId: group.id }), "tabs.query").catch(() => [] as chrome.tabs.Tab[]);
+    candidates.push(...members.filter((tab) => tab.id !== undefined && !attachedTabs.has(tab.id) && !createdTabs.has(tab.id) && siteOf(tab.url || tab.pendingUrl) === site));
+  }
+  return candidates.sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0] ?? null;
+}
+
 async function detachTab(tabId: number): Promise<void> {
   if (!attachedTabs.has(tabId)) return;
   attachedTabs.delete(tabId);
@@ -195,6 +216,18 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       if (previous?.id !== undefined) returnTo.set(tab.id, previous.id);
       void groupTab(tab);
       return toInfo(tab);
+    }
+    case "tabs.reuse": {
+      const url = String(params.url ?? "");
+      assertNavigable(url);
+      const windowId = await pickWindowId();
+      const tab = await findReusableTab(url, windowId);
+      if (tab?.id === undefined) return null;
+      const [previous] = await within(chrome.tabs.query({ active: true, windowId }), "tabs.query").catch(() => [] as chrome.tabs.Tab[]);
+      const updated = await within(chrome.tabs.update(tab.id, { active: true }), "tabs.update");
+      createdTabs.add(tab.id);
+      if (previous?.id !== undefined && previous.id !== tab.id) returnTo.set(tab.id, previous.id);
+      return toInfo(updated ?? tab);
     }
     case "tabs.close": {
       const tabId = Number(params.tabId);

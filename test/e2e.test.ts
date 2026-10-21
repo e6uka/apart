@@ -199,4 +199,27 @@ describe.skipIf(!enabled)("end to end against Chrome", () => {
     await expect(bridge.request("debugger.send", { tabId, method: "Runtime.evaluate", params: { expression: "1" } })).rejects.toThrow();
     await bridge.request("tabs.close", { tabId });
   }, 60000);
+
+  it("reuses a kept tab for the same site unless asked for a new one", async () => {
+    const open = async (url: string, extra = "") => {
+      const out: string[] = [];
+      const result = await runScript({
+        bridge,
+        runDir: mkdtempSync(path.join(os.tmpdir(), "apart-e2e-reuse-")),
+        timeoutMs: 30000,
+        keepTabs: true,
+        emit: (text) => out.push(text),
+        code: `const pg = await openTab(${JSON.stringify(url)}${extra}); console.log("ID=" + pg.targetId);`,
+      });
+      expect(result.error).toBeUndefined();
+      return Number(out.find((line) => line.startsWith("ID="))?.slice(3));
+    };
+    const first = await open(`${pageUrl}?first`);
+    const second = await open(`${pageUrl}?second`);
+    const fresh = await open(`${pageUrl}?fresh`, ", { newTab: true }");
+    expect(second).toBe(first);
+    expect(fresh).not.toBe(first);
+    expect((await bridge.listTabs()).find((tab) => tab.tabId === first)?.url).toBe(`${pageUrl}?second`);
+    for (const tabId of new Set([first, fresh])) await bridge.request("tabs.close", { tabId });
+  }, 90000);
 });

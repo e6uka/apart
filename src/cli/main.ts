@@ -38,7 +38,7 @@ Usage:
   apart exec '<task>'              Not supported: apart has no autonomous agent, use repl
 
 Script globals:
-  page, tabs, openTab(url), closeTab(page), listBrowserTabs(), attachBrowserTab(targetId),
+  page, tabs, openTab(url, { newTab }), closeTab(page), listBrowserTabs(), attachBrowserTab(targetId),
   attachActiveBrowserTab(), getTabByTargetId(id), snapshot(page, { interactive }) -> { tree, diff },
   annotatedScreenshot(page) -> { base64Image }, page.screenshot({ path, type, quality, fullPage }),
   page.pdf({ path, format }), page.locator(sel) / getByRole / getByLabel / getByText, page.evaluate(fn),

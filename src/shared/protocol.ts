@@ -18,6 +18,7 @@ export function allowedExtensionOrigins(extra?: string): string[] {
 export type ExtRequestMethod =
   | "tabs.list"
   | "tabs.create"
+  | "tabs.reuse"
   | "tabs.close"
   | "tabs.active"
   | "tabs.activate"
