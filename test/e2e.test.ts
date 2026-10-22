@@ -222,4 +222,31 @@ describe.skipIf(!enabled)("end to end against Chrome", () => {
     expect((await bridge.listTabs()).find((tab) => tab.tabId === first)?.url).toBe(`${pageUrl}?second`);
     for (const tabId of new Set([first, fresh])) await bridge.request("tabs.close", { tabId });
   }, 90000);
+
+  it("keeps a tab for the agent that left it open", async () => {
+    const run = async (agent: string, code: string) => {
+      const out: string[] = [];
+      const result = await runScript({
+        bridge,
+        runDir: mkdtempSync(path.join(os.tmpdir(), "apart-e2e-agent-")),
+        timeoutMs: 30000,
+        keepTabs: true,
+        agent,
+        emit: (text) => out.push(text),
+        code,
+      });
+      return { ...result, id: Number(out.find((line) => line.startsWith("ID="))?.slice(3)), out };
+    };
+    const open = (agent: string, url: string) => run(agent, `const pg = await openTab(${JSON.stringify(url)}); console.log("ID=" + pg.targetId);`);
+    const mine = await open("alpha", `${pageUrl}?alpha`);
+    const theirs = await open("beta", `${pageUrl}?beta`);
+    expect(theirs.id).not.toBe(mine.id);
+    expect((await bridge.listTabs()).find((tab) => tab.tabId === mine.id)?.url).toBe(`${pageUrl}?alpha`);
+    expect((await bridge.listTabs()).find((tab) => tab.tabId === mine.id)?.agent).toBe("alpha");
+    const borrow = await run("beta", `await attachBrowserTab(${JSON.stringify(String(mine.id))});`);
+    expect(borrow.error).toContain('belongs to agent "alpha"');
+    const again = await open("alpha", `${pageUrl}?again`);
+    expect(again.id).toBe(mine.id);
+    for (const tabId of new Set([mine.id, theirs.id])) await bridge.request("tabs.close", { tabId });
+  }, 90000);
 });

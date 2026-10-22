@@ -144,10 +144,19 @@ export interface TabInfo {
   title: string;
   active: boolean;
   windowId: number;
+  agent?: string;
+}
+
+export const MAX_AGENT_LENGTH = 120;
+
+export function cleanAgent(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const agent = raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, MAX_AGENT_LENGTH);
+  return agent || undefined;
 }
 
 export type CliRequest =
-  | { type: "run"; code: string; timeoutMs?: number; browser?: RunBrowser }
+  | { type: "run"; code: string; timeoutMs?: number; browser?: RunBrowser; agent?: string }
   | { type: "status" }
   | { type: "stop" }
   | { type: "config-changed" };

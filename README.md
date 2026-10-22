@@ -89,6 +89,14 @@ Open tabs with `openTab(url)`, read them with `snapshot(pg)`, and close them wit
 The last line of output is `[ok …]` or `[error …]`.
 ```
 
+### Tabs and agents
+
+Each run belongs to an agent. apart takes the name from `--agent <name>`, then the `APART_AGENT` environment variable, then the Claude Code session (each Claude Code session counts as its own agent). Runs with none of these have no agent.
+
+With `keep-tabs` on, a tab a run leaves open belongs to its agent. Other agents never reuse it in `openTab`, and `attachBrowserTab` and `attachActiveBrowserTab` refuse it with an error naming the owner, so two agents working on the same site each keep their own tab. `listBrowserTabs()` shows the owner as `agent`. Tabs left by runs with no agent are free for any run to use. Ownership lasts until the tab closes or the browser restarts.
+
+Subagents started by one Claude Code session share its session, and so its tabs. Give each one its own `--agent` name if they should not share.
+
 ### Optional: gstack
 
 If you use [gstack](https://github.com/garrytan/gstack), its `/browse`, `/scrape`, `/qa` and `/design-review` skills can run through apart instead of gstack's own browser, so their runs appear in apart's Activity page. They look for a command named `aside` (on `PATH` or at `~/.local/bin/aside`), so install apart under that name as well:
@@ -103,7 +111,7 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 
 | Command | What it does |
 | --- | --- |
-| `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--browser <name>` (or `--headless`, `--chrome`) to pick the browser for this run. Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
+| `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--browser <name>` (or `--headless`, `--chrome`) to pick the browser for this run, `--agent <name>` to say which agent is running it (see [Tabs and agents](#tabs-and-agents)). Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
 | `apart config default-browser <name>` | Set the browser runs use without a flag. `apart config` shows the current settings. |
 | `apart config keep-tabs on\|off` | Leave tabs a script opened in your Chrome open when it ends, instead of closing them. Also in the extension's Settings. |
 | `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. |
@@ -122,10 +130,10 @@ Each `repl` call is a fresh session. Variables do not persist between calls, and
 
 - `page` — the most recently opened or attached tab (`null` if none)
 - `tabs` — all tabs attached in this session
-- `openTab(url, { newTab? })` → `Page` — open a tab in the "apart" group, switch to it in your Chrome (headless has nothing to switch), and wait for it to load. If an earlier run left a tab for the same site open in the group (`linkedin.com` and `www.linkedin.com` count as one site), apart switches to that tab and loads `url` there instead of opening another. Pass `{ newTab: true }` to always open a new one.
+- `openTab(url, { newTab? })` → `Page` — open a tab in the "apart" group, switch to it in your Chrome (headless has nothing to switch), and wait for it to load. If an earlier run by the same agent, or by no agent, left a tab for the same site open in the group (`linkedin.com` and `www.linkedin.com` count as one site), apart switches to that tab and loads `url` there instead of opening another. Pass `{ newTab: true }` to always open a new one.
 - `closeTab(page)` — close a tab you opened (a borrowed tab is only detached). Tabs left open close when the script ends, unless `keep-tabs` is on.
-- `listBrowserTabs()` → `[{ targetId, url, title, active }]` — tabs already open in Chrome
-- `attachBrowserTab(targetId)`, `attachActiveBrowserTab()` → `Page` — work in an existing tab
+- `listBrowserTabs()` → `[{ targetId, url, title, active, agent? }]` — tabs already open in Chrome; `agent` names the agent a kept tab belongs to
+- `attachBrowserTab(targetId)`, `attachActiveBrowserTab()` → `Page` — work in an existing tab (not one another agent kept)
 - `getTabByTargetId(targetId)`
 - `snapshot(page, { interactive?: boolean })` → `{ tree, diff }`
 - `annotatedScreenshot(page)` → `{ base64Image }` — PNG with ref labels drawn on the page

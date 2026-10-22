@@ -9,7 +9,7 @@ import { findChrome } from "../daemon/headless";
 import { browserLabel, HEADLESS } from "../shared/browsers";
 import { isBrowser, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, LOG_DIR, SOCKET_PATH } from "../shared/paths";
-import { DEFAULT_PORT, allowedExtensionIds, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
+import { DEFAULT_PORT, allowedExtensionIds, cleanAgent, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
 
 declare const __APART_VERSION__: string;
 
@@ -28,6 +28,8 @@ Usage:
   apart repl ... --browser <name>  Use a connected browser (chrome, arc, ...) or headless for this run
   apart repl ... --headless        Same as --browser headless: a hidden Chrome apart starts itself
   apart repl ... --chrome          Same as --browser chrome
+  apart repl ... --agent <name>    Name the agent running this script; tabs it leaves open are its own
+                                   (default: $APART_AGENT, or the Claude Code session)
   apart config default-browser <name>
                                    Which one repl uses without a flag (also in the extension's settings)
   apart config keep-tabs on|off    Leave tabs in your Chrome open when a script ends
@@ -57,7 +59,7 @@ function parseFlags(args: string[]): { positional: string[]; flags: Map<string, 
     if (arg.startsWith("--")) {
       const [name, inline] = arg.slice(2).split("=", 2);
       if (inline !== undefined) flags.set(name, inline);
-      else if (["file", "timeout", "port", "browser"].includes(name) && i + 1 < args.length) flags.set(name, args[++i]);
+      else if (["file", "timeout", "port", "browser", "agent"].includes(name) && i + 1 < args.length) flags.set(name, args[++i]);
       else flags.set(name, true);
     } else positional.push(arg);
   }
@@ -154,6 +156,13 @@ async function daemonStatus(): Promise<DaemonStatus | null> {
   return status;
 }
 
+function detectAgent(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const named = cleanAgent(env.APART_AGENT);
+  if (named) return named;
+  const claude = cleanAgent(env.CLAUDE_CODE_SESSION_ID);
+  return claude ? `claude-${claude}` : undefined;
+}
+
 async function commandRepl(positional: string[], flags: Map<string, string | true>): Promise<void> {
   const port = Number(flags.get("port") ?? DEFAULT_PORT);
   const file = flags.get("file");
@@ -179,7 +188,13 @@ async function commandRepl(positional: string[], flags: Map<string, string | tru
     return;
   }
   const browser = typeof chosen === "string" ? chosen : flags.has("headless") ? HEADLESS : flags.has("chrome") ? "chrome" : undefined;
-  await talk(socket, { type: "run", code, timeoutMs, browser }, (message) => {
+  const named = flags.get("agent");
+  if (flags.has("agent") && !cleanAgent(named)) {
+    console.log("[error --agent needs a name, such as --agent research]");
+    return;
+  }
+  const agent = cleanAgent(named) ?? detectAgent();
+  await talk(socket, { type: "run", code, timeoutMs, browser, ...(agent ? { agent } : {}) }, (message) => {
     if (message.type === "out") process.stdout.write(`${message.text}\n`);
     else if (message.type === "done") {
       process.stdout.write(message.ok ? `[ok ${(message.elapsedMs / 1000).toFixed(1)}s]\n` : `[error ${message.error}]\n`);

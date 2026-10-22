@@ -153,20 +153,38 @@ function siteOf(url: string | undefined): string | null {
   }
 }
 
-async function keptTabIds(): Promise<number[]> {
-  const { keptTabs } = await chrome.storage.session.get("keptTabs").catch(() => ({ keptTabs: [] }));
-  return Array.isArray(keptTabs) ? keptTabs : [];
+interface KeptTab {
+  tabId: number;
+  agent?: string;
 }
 
-function updateKeptTabs(change: (ids: number[]) => number[]): Promise<unknown> {
+async function keptTabs(): Promise<KeptTab[]> {
+  const { keptTabs: stored } = await chrome.storage.session.get("keptTabs").catch(() => ({ keptTabs: [] }));
+  if (!Array.isArray(stored)) return [];
+  return stored.flatMap((entry): KeptTab[] => {
+    if (typeof entry === "number") return [{ tabId: entry }];
+    if (typeof entry?.tabId !== "number") return [];
+    return [typeof entry.agent === "string" && entry.agent ? { tabId: entry.tabId, agent: entry.agent } : { tabId: entry.tabId }];
+  });
+}
+
+function updateKeptTabs(change: (tabs: KeptTab[]) => KeptTab[]): Promise<unknown> {
   storageQueue = storageQueue.then(async () => {
-    const ids = await keptTabIds();
-    await chrome.storage.session.set({ keptTabs: change(ids) });
+    await chrome.storage.session.set({ keptTabs: change(await keptTabs()) });
   }).catch(() => undefined);
   return storageQueue;
 }
 
-async function findReusableTab(url: string, windowId: number): Promise<chrome.tabs.Tab | null> {
+function forgetKeptTab(tabId: number): Promise<unknown> {
+  return updateKeptTabs((tabs) => tabs.filter((kept) => kept.tabId !== tabId));
+}
+
+async function tabOwners(): Promise<Map<number, string>> {
+  await storageQueue;
+  return new Map((await keptTabs()).flatMap((kept) => (kept.agent ? [[kept.tabId, kept.agent] as const] : [])));
+}
+
+async function findReusableTab(url: string, windowId: number, agent: string | undefined): Promise<chrome.tabs.Tab | null> {
   const site = siteOf(url);
   if (!site) return null;
   const candidates = new Map<number, chrome.tabs.Tab>();
@@ -177,12 +195,18 @@ async function findReusableTab(url: string, windowId: number): Promise<chrome.ta
       for (const tab of members) if (tab.id !== undefined) candidates.set(tab.id, tab);
     }
   }
-  for (const tabId of await keptTabIds()) {
+  const kept = await keptTabs();
+  for (const { tabId } of kept) {
     const tab = await within(chrome.tabs.get(tabId), "tabs.get").catch(() => null);
     if (tab?.id !== undefined && tab.windowId === windowId) candidates.set(tab.id, tab);
   }
+  const owners = new Map(kept.map((entry) => [entry.tabId, entry.agent]));
   return Array.from(candidates.values())
     .filter((tab) => !attachedTabs.has(tab.id!) && !createdTabs.has(tab.id!) && siteOf(tab.url || tab.pendingUrl) === site)
+    .filter((tab) => {
+      const owner = owners.get(tab.id!);
+      return owner === undefined || owner === agent;
+    })
     .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))[0] ?? null;
 }
 
@@ -224,8 +248,13 @@ async function detachAll(): Promise<void> {
 async function dispatch(request: ExtRequest): Promise<unknown> {
   const params = (request.params ?? {}) as Record<string, any>;
   switch (request.method) {
-    case "tabs.list":
-      return (await chrome.tabs.query({})).filter((tab) => tab.id !== undefined).map(toInfo);
+    case "tabs.list": {
+      const owners = await tabOwners();
+      return (await chrome.tabs.query({})).filter((tab) => tab.id !== undefined).map((tab) => {
+        const agent = owners.get(tab.id!);
+        return agent ? { ...toInfo(tab), agent } : toInfo(tab);
+      });
+    }
     case "tabs.create": {
       const url = String(params.url ?? "about:blank");
       assertNavigable(url);
@@ -242,13 +271,13 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       const url = String(params.url ?? "");
       assertNavigable(url);
       const windowId = await pickWindowId();
-      const tab = await findReusableTab(url, windowId);
+      const agent = typeof params.agent === "string" && params.agent ? params.agent : undefined;
+      const tab = await findReusableTab(url, windowId, agent);
       if (tab?.id === undefined) return null;
       const [previous] = await within(chrome.tabs.query({ active: true, windowId }), "tabs.query").catch(() => [] as chrome.tabs.Tab[]);
       const updated = await within(chrome.tabs.update(tab.id, { active: true }), "tabs.update");
       createdTabs.add(tab.id);
-      const reusedId = tab.id;
-      await updateKeptTabs((ids) => ids.filter((id) => id !== reusedId));
+      await forgetKeptTab(tab.id);
       if (previous?.id !== undefined && previous.id !== tab.id) returnTo.set(tab.id, previous.id);
       return toInfo(updated ?? tab);
     }
@@ -263,7 +292,8 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       await detachTab(tabId);
       createdTabs.delete(tabId);
       returnTo.delete(tabId);
-      await updateKeptTabs((ids) => [...ids.filter((id) => id !== tabId), tabId]);
+      const agent = typeof params.agent === "string" && params.agent ? params.agent : undefined;
+      await updateKeptTabs((tabs) => [...tabs.filter((kept) => kept.tabId !== tabId), agent ? { tabId, agent } : { tabId }]);
       return true;
     }
     case "tabs.active": {
@@ -450,7 +480,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   createdTabs.delete(tabId);
   returnTo.delete(tabId);
   attachedTabs.delete(tabId);
-  void updateKeptTabs((ids) => ids.filter((id) => id !== tabId));
+  void forgetKeptTab(tabId);
 });
 
 void ensureAlarm();
