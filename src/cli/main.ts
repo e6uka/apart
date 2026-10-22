@@ -21,8 +21,11 @@ const DAEMON_START_TIMEOUT_MS = 8000;
 
 const HELP = `apart ${VERSION} — drive your real, signed-in Chrome from the terminal
 
+Agents: run "apart guide" first. It explains the rules of using apart.
+
 Usage:
-  apart repl '<javascript>'        Run a Playwright-style script against Chrome (exit code is always 0)
+  apart guide                      How to use apart from a coding agent, and its rules
+  apart repl '<javascript>'       Run a Playwright-style script against Chrome (exit code is always 0)
   apart repl --file script.js      Read the script from a file ("-" reads stdin)
   apart repl ... --timeout <ms>    Script time budget (default 120000, max 600000)
   apart repl ... --browser <name>  Use a connected browser (chrome, arc, ...) or headless for this run
@@ -50,6 +53,57 @@ Script globals:
 
 Relative artifact paths resolve inside the per-run directory printed by console.log(pwd).
 Output ends with "[ok <seconds>s]" or "[error <message>]".`;
+
+const GUIDE = `apart guide — how to use apart from a coding agent
+
+apart runs a Playwright-style script in the user's real, signed-in browser (or a hidden
+headless one) and prints what happened. Run it as a shell command:
+
+  apart repl '<javascript>'             or   apart repl --file script.js
+
+The last line is always "[ok <seconds>s]" or "[error <message>]"; the exit code is always 0.
+
+Every run
+  - Is a fresh session. Variables and handles do not carry over to the next run.
+  - Opens tabs with openTab(url) and reads them with snapshot(pg, { interactive: true }),
+    which prints the page with refs like [ref=e12] you can click or fill:
+      const pg = await openTab("https://example.com");
+      console.log((await snapshot(pg, { interactive: true })).tree);
+      await pg.locator("e12").click();
+      await closeTab(pg);
+  - Closes its tabs when it ends unless the user turned keep-tabs on.
+  - Has a 120 s budget by default (--timeout <ms>, up to 600000).
+  - Writes files only inside its run directory (console.log(pwd) prints it).
+
+Tabs belong to agents
+  - Each run belongs to an agent: --agent <name>, else $APART_AGENT, else the Claude Code
+    session. Tabs a run leaves open belong to that agent.
+  - Another agent's tab is never reused by openTab, and attachBrowserTab or
+    attachActiveBrowserTab refuse it with an error naming the owner. Do not work around
+    that error; open your own tab instead.
+  - listBrowserTabs() shows the owner of a kept tab as "agent".
+  - Tabs are freed for others once their agent's process ends.
+  - Subagents share their parent session. If you are a subagent, or one of several agents
+    in the same session, pass your own name on every run: --agent <short-task-name>.
+
+Choosing the browser
+  - Without a flag, runs use the user's default browser. --headless runs signed out in a
+    hidden Chrome; --browser <name> picks a connected one (chrome, arc, ...).
+  - Use the user's browser only for pages that need their sign-in. Do not submit forms,
+    send messages, buy or delete anything there unless the user asked for it.
+
+When something fails
+  - "[error ... is not connected]": the extension is not reachable. Tell the user; run
+    apart doctor for the steps. Do not silently switch to headless for signed-in pages.
+  - A click that "would land on" something else means an overlay is in the way: take a
+    new snapshot and deal with it, or click({ force: true }) if you are sure.
+
+Full API: apart --help, or https://github.com/e6uka/apart#script-api`;
+
+function guide(): string {
+  const agent = detectAgent();
+  return `${GUIDE}\n\nIn this shell, runs belong to: ${agent ? `agent "${agent}"` : "no agent (pass --agent <name> to keep your tabs to yourself)"}`;
+}
 
 function parseFlags(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
   const positional: string[] = [];
@@ -354,7 +408,9 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
     else if (!defaultConnected) check(false, `the default browser, ${config.defaultBrowser}, is not connected`, `open it with the extension loaded, or pick a connected one: apart config default-browser ${status.browsers[0].name}`);
   }
   console.log(lines.join("\n"));
-  console.log(problems === 0 ? "\nAll good. Try: apart repl 'const pg = await openTab(\"https://example.com\"); console.log(await pg.title()); await closeTab(pg);'" : `\n${problems} problem${problems === 1 ? "" : "s"} found.`);
+  console.log(problems === 0
+    ? "\nAll good. Try: apart repl 'const pg = await openTab(\"https://example.com\"); console.log(await pg.title()); await closeTab(pg);'\n\nTo let a coding agent use apart, add this line to your CLAUDE.md or AGENTS.md:\n  To read or act on a web page, use apart. Run `apart guide` first and follow it."
+    : `\n${problems} problem${problems === 1 ? "" : "s"} found.`);
   return problems === 0 ? 0 : 1;
 }
 
@@ -385,6 +441,9 @@ async function main(): Promise<number> {
       return commandDoctor(flags);
     case "config":
       return commandConfig(positional);
+    case "guide":
+      console.log(guide());
+      return 0;
     case "extension-path":
       console.log(EXTENSION_DIR);
       return 0;

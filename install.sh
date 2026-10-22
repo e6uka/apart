@@ -120,3 +120,6 @@ echo "  1. Open chrome://extensions (in Arc: arc://extensions) and turn on Devel
 echo "  2. Click \"Load unpacked\" and choose: $PWD/dist/extension"
 echo
 echo "Then check everything with:  $BIN/apart doctor"
+echo
+echo "To let a coding agent use apart, add this line to your CLAUDE.md or AGENTS.md:"
+echo "  To read or act on a web page, use apart. Run \`apart guide\` first and follow it."

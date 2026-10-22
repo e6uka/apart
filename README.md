@@ -80,14 +80,13 @@ apart doctor
 
 ## Using it from an agent
 
-Any agent that can run shell commands can use apart. Tell it the command exists and point it at the [Script API](#script-api), for example in your project's `CLAUDE.md` or `AGENTS.md`:
+Any agent that can run shell commands can use apart. `apart guide` prints everything an agent needs: how to write a script, how tabs are shared between agents, when to use your browser or headless, and what to do when something fails. So the only thing to tell your agent, in your project's `CLAUDE.md` or `AGENTS.md`, is:
 
 ```markdown
-To read or act on a web page in my signed-in Chrome, run `apart repl '<script>'`.
-Scripts use the Playwright-style API in https://github.com/e6uka/apart#script-api.
-Open tabs with `openTab(url)`, read them with `snapshot(pg)`, and close them with `closeTab(pg)`.
-The last line of output is `[ok …]` or `[error …]`.
+To read or act on a web page, use apart. Run `apart guide` first and follow it.
 ```
+
+`apart --help` starts with the same pointer, so an agent that finds the command on its own is sent to the guide too.
 
 ### Tabs and agents
 
@@ -114,6 +113,7 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 | Command | What it does |
 | --- | --- |
 | `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--browser <name>` (or `--headless`, `--chrome`) to pick the browser for this run, `--agent <name>` to say which agent is running it (see [Tabs and agents](#tabs-and-agents)). Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
+| `apart guide` | Print the guide for coding agents: how to write scripts, the tab rules and what to do when something fails, plus the agent name this shell's runs belong to. |
 | `apart config default-browser <name>` | Set the browser runs use without a flag. `apart config` shows the current settings. |
 | `apart config keep-tabs on\|off` | Leave tabs a script opened in your Chrome open when it ends, instead of closing them. Also in the extension's Settings. |
 | `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. |
