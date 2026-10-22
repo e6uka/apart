@@ -106,7 +106,7 @@ class Session {
     this.assertActive();
     if (url !== "about:blank" && !options.newTab) await this.freeTabsOfEndedAgents();
     const reused = url !== "about:blank" && !options.newTab
-      ? await this.bridge.request<TabInfo | null>("tabs.reuse", { url, ...(this.agent ? { agent: this.agent } : {}) }).catch(() => null)
+      ? await this.bridge.request<TabInfo | null>("tabs.reuse", { url, ...(this.agent ? { agent: this.agent } : {}), ...(this.agent && this.agentPid ? { agentPid: this.agentPid } : {}) }).catch(() => null)
       : null;
     const info = reused ?? await this.bridge.request<TabInfo>("tabs.create", { url: "about:blank" });
     if (!reused) this.tabsOpened += 1;
@@ -142,7 +142,7 @@ class Session {
     const info = (await this.bridge.listTabs()).find((tab) => String(tab.tabId) === String(targetId));
     if (!info) throw new Error(`No open browser tab found for targetId ${targetId}`);
     if (info.agent && info.agent !== this.agent) {
-      throw new Error(`Tab ${targetId} belongs to agent "${info.agent}". Open your own tab with openTab(url), or run with --agent ${JSON.stringify(info.agent)} if you are that agent.`);
+      throw new Error(`Tab ${targetId} belongs to agent "${info.agent}". Open your own tab with openTab(url) instead.`);
     }
     return this.attach(info.tabId, "borrowed", info.url);
   }

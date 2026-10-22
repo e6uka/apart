@@ -288,7 +288,8 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       const [previous] = await within(chrome.tabs.query({ active: true, windowId }), "tabs.query").catch(() => [] as chrome.tabs.Tab[]);
       const updated = await within(chrome.tabs.update(tab.id, { active: true }), "tabs.update");
       createdTabs.add(tab.id);
-      await forgetKeptTab(tab.id);
+      const reusedId = tab.id;
+      await updateKeptTabs((tabs) => [...tabs.filter((kept) => kept.tabId !== reusedId), keptTab(reusedId, agent, params.agentPid)]);
       if (previous?.id !== undefined && previous.id !== tab.id) returnTo.set(tab.id, previous.id);
       return toInfo(updated ?? tab);
     }

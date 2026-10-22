@@ -71,20 +71,28 @@ Every run
       console.log((await snapshot(pg, { interactive: true })).tree);
       await pg.locator("e12").click();
       await closeTab(pg);
-  - Closes its tabs when it ends unless the user turned keep-tabs on.
+  - Closes its tabs when it ends, unless the user turned keep-tabs on (headless tabs
+    always close).
   - Has a 120 s budget by default (--timeout <ms>, up to 600000).
   - Writes files only inside its run directory (console.log(pwd) prints it).
 
 Tabs belong to agents
   - Each run belongs to an agent: --agent <name>, else $APART_AGENT, else the Claude Code
-    session. Tabs a run leaves open belong to that agent.
-  - Another agent's tab is never reused by openTab, and attachBrowserTab or
+    session. Inside Claude Code, an --agent name is scoped to the session, so two sessions
+    using the same name stay apart. $APART_AGENT is shared: every session with the same
+    value is the same agent, which lets one session hand its tabs to the next. Tabs a run
+    leaves open belong to that agent.
+  - openTab does not reuse another agent's tab, and attachBrowserTab or
     attachActiveBrowserTab refuse it with an error naming the owner. Do not work around
     that error; open your own tab instead.
   - listBrowserTabs() shows the owner of a kept tab as "agent".
-  - Tabs are freed for others once their agent's process ends.
+  - When apart knows the agent's process ($APART_AGENT_PID, or the Claude Code process
+    for names that are not shared), its tabs are freed for others after that process
+    ends. Otherwise they stay its own until the tab closes or the browser restarts.
   - Subagents share their parent session. If you are a subagent, or one of several agents
     in the same session, pass your own name on every run: --agent <short-task-name>.
+  - Ownership needs the browser extension to match this version of apart. If apart doctor
+    says the extension is older, tell the user to reload it.
 
 Choosing the browser
   - Without a flag, runs use the user's default browser. --headless runs signed out in a
@@ -101,7 +109,7 @@ When something fails
 Full API: apart --help, or https://github.com/e6uka/apart#script-api`;
 
 function guide(): string {
-  const agent = detectAgent();
+  const { agent } = detectAgent();
   return `${GUIDE}\n\nIn this shell, runs belong to: ${agent ? `agent "${agent}"` : "no agent (pass --agent <name> to keep your tabs to yourself)"}`;
 }
 
@@ -210,11 +218,15 @@ async function daemonStatus(): Promise<DaemonStatus | null> {
   return status;
 }
 
-function detectAgent(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const named = cleanAgent(env.APART_AGENT);
-  if (named) return named;
-  const claude = cleanAgent(env.CLAUDE_CODE_SESSION_ID);
-  return claude ? `claude-${claude}` : undefined;
+function detectAgent(env: NodeJS.ProcessEnv = process.env, flag?: string): { agent?: string; agentPid?: number } {
+  const session = cleanAgent(env.CLAUDE_CODE_SESSION_ID);
+  const claude = session ? `claude-${session}` : undefined;
+  const claudePid = claude ? cleanPid(env.CLAUDE_PID) : undefined;
+  const ownPid = cleanPid(env.APART_AGENT_PID);
+  if (flag) return claude ? { agent: cleanAgent(`${claude}:${flag}`), agentPid: ownPid ?? claudePid } : { agent: flag, agentPid: ownPid };
+  const shared = cleanAgent(env.APART_AGENT);
+  if (shared) return { agent: shared, agentPid: ownPid };
+  return claude ? { agent: claude, agentPid: ownPid ?? claudePid } : {};
 }
 
 async function commandRepl(positional: string[], flags: Map<string, string | true>): Promise<void> {
@@ -247,8 +259,7 @@ async function commandRepl(positional: string[], flags: Map<string, string | tru
     console.log("[error --agent needs a name, such as --agent research]");
     return;
   }
-  const agent = cleanAgent(named) ?? detectAgent();
-  const agentPid = agent ? cleanPid(process.env.APART_AGENT_PID) ?? cleanPid(process.env.CLAUDE_PID) : undefined;
+  const { agent, agentPid } = detectAgent(process.env, cleanAgent(named));
   await talk(socket, { type: "run", code, timeoutMs, browser, ...(agent ? { agent } : {}), ...(agentPid ? { agentPid } : {}) }, (message) => {
     if (message.type === "out") process.stdout.write(`${message.text}\n`);
     else if (message.type === "done") {
@@ -401,7 +412,11 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   if (status) {
     check(true, `daemon running (pid ${status.pid}, port ${status.port})`);
     const loadExtension = `in Chrome or Arc open chrome://extensions, turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`;
-    for (const item of status.browsers) lines.push(`ok       ${browserLabel(item.name)} connected as "${item.name}" (extension ${item.version})`);
+    for (const item of status.browsers) {
+      if (VERSION !== "dev" && item.version !== VERSION) {
+        check(false, `${browserLabel(item.name)} runs extension ${item.version}, but apart is ${VERSION}`, `reload the extension in ${browserLabel(item.name)}: open chrome://extensions (in Arc: arc://extensions) and click the reload icon on apart. Until then it ignores which agent owns a tab.`);
+      } else lines.push(`ok       ${browserLabel(item.name)} connected as "${item.name}" (extension ${item.version})`);
+    }
     const defaultConnected = config.defaultBrowser === HEADLESS || status.browsers.some((item) => item.name === config.defaultBrowser);
     if (status.browsers.length === 0 && config.defaultBrowser === HEADLESS) lines.push(`info     no browser connected; only needed for --browser runs\n         → ${loadExtension}`);
     else if (status.browsers.length === 0) check(false, "no browser connected", loadExtension);

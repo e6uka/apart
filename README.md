@@ -90,11 +90,13 @@ To read or act on a web page, use apart. Run `apart guide` first and follow it.
 
 ### Tabs and agents
 
-Each run belongs to an agent. apart takes the name from `--agent <name>`, then the `APART_AGENT` environment variable, then the Claude Code session (each Claude Code session counts as its own agent). Runs with none of these have no agent.
+Each run belongs to an agent. apart takes the name from `--agent <name>`, then the `APART_AGENT` environment variable, then the Claude Code session (each Claude Code session counts as its own agent). Inside Claude Code, an `--agent` name is scoped to the session (`claude-<session>:<name>`), so two sessions that both use `--agent research` stay apart. `APART_AGENT` is shared on purpose: every session with the same value is the same agent, so one session can hand its tabs to the next. Runs with none of these have no agent.
+
+Ownership needs the extension to match the CLI's version; `apart doctor` reports an extension that has not been reloaded since an update.
 
 With `keep-tabs` on, a tab a run leaves open belongs to its agent. Other agents never reuse it in `openTab`, and `attachBrowserTab` and `attachActiveBrowserTab` refuse it with an error naming the owner, so two agents working on the same site each keep their own tab. `listBrowserTabs()` shows the owner as `agent`. Tabs left by runs with no agent are free for any run to use.
 
-An agent lets go of its tabs when it ends. apart records the agent's process (the Claude Code process, or `APART_AGENT_PID` if you set it), and once that process has exited, the tabs stay open but any run can use them. Without a known process, ownership lasts until the tab closes or the browser restarts.
+An agent lets go of its tabs when it ends. apart records the agent's process (`APART_AGENT_PID` if you set it, otherwise the Claude Code process, except for shared `APART_AGENT` names, which outlive any one session), and once that process has exited, the tabs stay open but any run can use them. Without a known process, ownership lasts until the tab closes or the browser restarts.
 
 Subagents started by one Claude Code session share its session and its process, so apart cannot tell them apart. Have each subagent pass its own `--agent` name if they should not share tabs. Their tabs are then let go when the whole session ends.
 
