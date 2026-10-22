@@ -40,10 +40,10 @@ No browser fork, no remote debugging port and no cloud service are involved: eve
 
 Each run uses one browser:
 
-- **Your browsers** (`--browser chrome`, `--browser arc`, …): any Chromium-based browser you have loaded the extension into, such as Chrome, Arc, Brave or Edge, signed in as you. You can watch it work. Several can be connected at once.
+- **Your browsers** (`--browser chrome`, `--browser arc`, …): any Chromium-based browser you have loaded the extension into, such as Chrome, Arc, Dia, Brave or Edge, signed in as you. You can watch it work. Several can be connected at once.
 - **Headless** (`--headless`): a hidden Chrome the daemon starts itself, with its own signed-out profile in `~/.apart/headless-profile`. It needs no extension and works while your browsers are closed. The daemon talks to it over a pipe, not a network port, starts it on the first headless run and closes it after five idle minutes.
 
-The daemon names each connected browser after its app (`chrome`, `arc`, `brave`, `edge`). To use two profiles of the same browser at once, give one its own name in that profile's extension Settings; otherwise the newest connection takes over. `apart daemon status` lists what is connected.
+The daemon names each connected browser after its app (`chrome`, `arc`, `dia`, `brave`, `edge`). To use two profiles of the same browser at once, give one its own name in that profile's extension Settings; otherwise the newest connection takes over. `apart daemon status` lists what is connected.
 
 Runs without a flag use your default browser. `./install.sh` asks for it the first time; change it later in the extension's Settings or with `apart config default-browser <name>`. Scripts in different browsers run at the same time; scripts in the same browser run one after another. Every run appears in the Activity page of each connected browser.
 
@@ -60,7 +60,7 @@ Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart
 ## Requirements
 
 - macOS or Linux, Node.js 22 or newer, yarn
-- Google Chrome, Arc, Brave, Edge or another Chromium-based browser (Chromium 125 or newer)
+- Google Chrome, Arc, Dia, Brave, Edge or another Chromium-based browser (Chromium 125 or newer)
 
 ## Install
 
@@ -70,7 +70,7 @@ cd apart
 ./install.sh
 ```
 
-The installer asks which browser runs should use by default (pass `--browser=<name>` to skip the question). Then load the extension once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`), turn on **Developer mode**, click **Load unpacked** and choose `dist/extension` (print its path with `apart extension-path`). Finish with:
+The installer asks which browser runs should use by default (pass `--browser=<name>` to skip the question). Then load the extension once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`; in Dia, `dia://extensions`), turn on **Developer mode**, click **Load unpacked** and choose `dist/extension` (print its path with `apart extension-path`). Finish with:
 
 ```bash
 apart doctor
