@@ -23,6 +23,7 @@ export type ExtRequestMethod =
   | "tabs.active"
   | "tabs.activate"
   | "tabs.release"
+  | "tabs.disown"
   | "debugger.attach"
   | "debugger.detach"
   | "debugger.send"
@@ -144,10 +145,25 @@ export interface TabInfo {
   title: string;
   active: boolean;
   windowId: number;
+  agent?: string;
+  agentPid?: number;
+}
+
+export const MAX_AGENT_LENGTH = 120;
+
+export function cleanPid(raw: unknown): number | undefined {
+  const pid = typeof raw === "string" ? Number(raw) : raw;
+  return typeof pid === "number" && Number.isInteger(pid) && pid > 1 ? pid : undefined;
+}
+
+export function cleanAgent(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const agent = raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, MAX_AGENT_LENGTH);
+  return agent || undefined;
 }
 
 export type CliRequest =
-  | { type: "run"; code: string; timeoutMs?: number; browser?: RunBrowser }
+  | { type: "run"; code: string; timeoutMs?: number; browser?: RunBrowser; agent?: string; agentPid?: number }
   | { type: "status" }
   | { type: "stop" }
   | { type: "config-changed" };

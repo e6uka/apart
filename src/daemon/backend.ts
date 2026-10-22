@@ -8,6 +8,7 @@ export interface TabEvent {
 
 export interface BrowserBackend {
   readonly connected: boolean;
+  readonly headless?: boolean;
   request<T = unknown>(method: ExtRequestMethod, params?: Record<string, unknown>, timeoutMs?: number): Promise<T>;
   listTabs(): Promise<TabInfo[]>;
   onTab(tabId: number, listener: (event: TabEvent) => void): () => void;
