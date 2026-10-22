@@ -1,6 +1,6 @@
 {
   "name": "apart",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Drive your real, signed-in Chrome from the terminal with Playwright-style scripts",
   "license": "MIT",
