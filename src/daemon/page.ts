@@ -624,13 +624,13 @@ export class Page {
     else await this.bridge.request("debugger.detach", { tabId: this.tabId }).catch(() => undefined);
   }
 
-  async leaveOpen(agent?: string): Promise<void> {
+  async leaveOpen(agent?: string, agentPid?: number): Promise<void> {
     if (this.detached) return;
     this.detached = true;
     this.unsubscribe();
     this.failLoadWaiters();
     this.failDownloads(new Error("The script ended before the download finished"));
-    await this.bridge.request("tabs.release", { tabId: this.tabId, ...(agent ? { agent } : {}) }).catch(() => undefined);
+    await this.bridge.request("tabs.release", { tabId: this.tabId, ...(agent ? { agent } : {}), ...(agent && agentPid ? { agentPid } : {}) }).catch(() => undefined);
   }
 
   async pressKey(key: string): Promise<void> {

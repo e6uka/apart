@@ -10,7 +10,7 @@ import { runScript } from "./runner";
 import { browserLabel } from "../shared/browsers";
 import { isBrowser, isHeadless, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, HISTORY_PATH, LOG_DIR, PID_PATH, RUNS_DIR, SOCKET_DIR, SOCKET_PATH } from "../shared/paths";
-import { allowedExtensionOrigins, cleanAgent, type CliMessage, type CliRequest, type DaemonStatus, type ExtHello, type RunRecord } from "../shared/protocol";
+import { allowedExtensionOrigins, cleanAgent, cleanPid, type CliMessage, type CliRequest, type DaemonStatus, type ExtHello, type RunRecord } from "../shared/protocol";
 
 const EXTENSION_WAIT_MS = 20000;
 const DEFAULT_SCRIPT_TIMEOUT_MS = 120000;
@@ -172,6 +172,7 @@ export async function runDaemon(options: { port: number; version: string }): Pro
         bridge: backend,
         keepTabs: Boolean(target) && config.keepTabs,
         agent: cleanAgent(request.agent),
+        agentPid: cleanAgent(request.agent) ? cleanPid(request.agentPid) : undefined,
         emit: (text) => write(socket, { type: "out", text }),
       });
       write(socket, { type: "done", ok: result.ok, error: result.error, elapsedMs: result.elapsedMs, runDir });

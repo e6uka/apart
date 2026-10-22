@@ -249,4 +249,29 @@ describe.skipIf(!enabled)("end to end against Chrome", () => {
     expect(again.id).toBe(mine.id);
     for (const tabId of new Set([mine.id, theirs.id])) await bridge.request("tabs.close", { tabId });
   }, 90000);
+
+  it("frees a kept tab once its agent's process has ended", async () => {
+    const ended = spawn(process.execPath, ["-e", ""]);
+    await new Promise((resolve) => ended.once("exit", resolve));
+    const run = async (agent: string, agentPid: number | undefined, url: string) => {
+      const out: string[] = [];
+      const result = await runScript({
+        bridge,
+        runDir: mkdtempSync(path.join(os.tmpdir(), "apart-e2e-ended-")),
+        timeoutMs: 30000,
+        keepTabs: true,
+        agent,
+        agentPid,
+        emit: (text) => out.push(text),
+        code: `const pg = await openTab(${JSON.stringify(url)}); console.log("ID=" + pg.targetId);`,
+      });
+      expect(result.error).toBeUndefined();
+      return Number(out.find((line) => line.startsWith("ID="))?.slice(3));
+    };
+    const gone = await run("gone", ended.pid, `${pageUrl}?gone`);
+    const next = await run("next", process.pid, `${pageUrl}?next`);
+    expect(next).toBe(gone);
+    expect((await bridge.listTabs()).find((tab) => tab.tabId === next)?.agent).toBe("next");
+    await bridge.request("tabs.close", { tabId: next });
+  }, 90000);
 });

@@ -156,6 +156,12 @@ function siteOf(url: string | undefined): string | null {
 interface KeptTab {
   tabId: number;
   agent?: string;
+  agentPid?: number;
+}
+
+function keptTab(tabId: number, agent: unknown, agentPid: unknown): KeptTab {
+  if (typeof agent !== "string" || !agent) return { tabId };
+  return typeof agentPid === "number" && Number.isInteger(agentPid) && agentPid > 1 ? { tabId, agent, agentPid } : { tabId, agent };
 }
 
 async function keptTabs(): Promise<KeptTab[]> {
@@ -164,7 +170,7 @@ async function keptTabs(): Promise<KeptTab[]> {
   return stored.flatMap((entry): KeptTab[] => {
     if (typeof entry === "number") return [{ tabId: entry }];
     if (typeof entry?.tabId !== "number") return [];
-    return [typeof entry.agent === "string" && entry.agent ? { tabId: entry.tabId, agent: entry.agent } : { tabId: entry.tabId }];
+    return [keptTab(entry.tabId, entry.agent, entry.agentPid)];
   });
 }
 
@@ -179,9 +185,9 @@ function forgetKeptTab(tabId: number): Promise<unknown> {
   return updateKeptTabs((tabs) => tabs.filter((kept) => kept.tabId !== tabId));
 }
 
-async function tabOwners(): Promise<Map<number, string>> {
+async function tabOwners(): Promise<Map<number, KeptTab>> {
   await storageQueue;
-  return new Map((await keptTabs()).flatMap((kept) => (kept.agent ? [[kept.tabId, kept.agent] as const] : [])));
+  return new Map((await keptTabs()).flatMap((kept) => (kept.agent ? [[kept.tabId, kept] as const] : [])));
 }
 
 async function findReusableTab(url: string, windowId: number, agent: string | undefined): Promise<chrome.tabs.Tab | null> {
@@ -251,9 +257,14 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
     case "tabs.list": {
       const owners = await tabOwners();
       return (await chrome.tabs.query({})).filter((tab) => tab.id !== undefined).map((tab) => {
-        const agent = owners.get(tab.id!);
-        return agent ? { ...toInfo(tab), agent } : toInfo(tab);
+        const owner = owners.get(tab.id!);
+        return owner ? { ...toInfo(tab), agent: owner.agent, ...(owner.agentPid ? { agentPid: owner.agentPid } : {}) } : toInfo(tab);
       });
+    }
+    case "tabs.disown": {
+      const tabIds = new Set(Array.isArray(params.tabIds) ? params.tabIds.map(Number) : []);
+      await updateKeptTabs((tabs) => tabs.map((kept) => (tabIds.has(kept.tabId) ? { tabId: kept.tabId } : kept)));
+      return true;
     }
     case "tabs.create": {
       const url = String(params.url ?? "about:blank");
@@ -292,8 +303,7 @@ async function dispatch(request: ExtRequest): Promise<unknown> {
       await detachTab(tabId);
       createdTabs.delete(tabId);
       returnTo.delete(tabId);
-      const agent = typeof params.agent === "string" && params.agent ? params.agent : undefined;
-      await updateKeptTabs((tabs) => [...tabs.filter((kept) => kept.tabId !== tabId), agent ? { tabId, agent } : { tabId }]);
+      await updateKeptTabs((tabs) => [...tabs.filter((kept) => kept.tabId !== tabId), keptTab(tabId, params.agent, params.agentPid)]);
       return true;
     }
     case "tabs.active": {

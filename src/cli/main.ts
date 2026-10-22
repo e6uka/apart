@@ -9,7 +9,7 @@ import { findChrome } from "../daemon/headless";
 import { browserLabel, HEADLESS } from "../shared/browsers";
 import { isBrowser, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, LOG_DIR, SOCKET_PATH } from "../shared/paths";
-import { DEFAULT_PORT, allowedExtensionIds, cleanAgent, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
+import { DEFAULT_PORT, allowedExtensionIds, cleanAgent, cleanPid, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
 
 declare const __APART_VERSION__: string;
 
@@ -194,7 +194,8 @@ async function commandRepl(positional: string[], flags: Map<string, string | tru
     return;
   }
   const agent = cleanAgent(named) ?? detectAgent();
-  await talk(socket, { type: "run", code, timeoutMs, browser, ...(agent ? { agent } : {}) }, (message) => {
+  const agentPid = agent ? cleanPid(process.env.APART_AGENT_PID) ?? cleanPid(process.env.CLAUDE_PID) : undefined;
+  await talk(socket, { type: "run", code, timeoutMs, browser, ...(agent ? { agent } : {}), ...(agentPid ? { agentPid } : {}) }, (message) => {
     if (message.type === "out") process.stdout.write(`${message.text}\n`);
     else if (message.type === "done") {
       process.stdout.write(message.ok ? `[ok ${(message.elapsedMs / 1000).toFixed(1)}s]\n` : `[error ${message.error}]\n`);

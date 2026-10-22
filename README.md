@@ -93,9 +93,11 @@ The last line of output is `[ok …]` or `[error …]`.
 
 Each run belongs to an agent. apart takes the name from `--agent <name>`, then the `APART_AGENT` environment variable, then the Claude Code session (each Claude Code session counts as its own agent). Runs with none of these have no agent.
 
-With `keep-tabs` on, a tab a run leaves open belongs to its agent. Other agents never reuse it in `openTab`, and `attachBrowserTab` and `attachActiveBrowserTab` refuse it with an error naming the owner, so two agents working on the same site each keep their own tab. `listBrowserTabs()` shows the owner as `agent`. Tabs left by runs with no agent are free for any run to use. Ownership lasts until the tab closes or the browser restarts.
+With `keep-tabs` on, a tab a run leaves open belongs to its agent. Other agents never reuse it in `openTab`, and `attachBrowserTab` and `attachActiveBrowserTab` refuse it with an error naming the owner, so two agents working on the same site each keep their own tab. `listBrowserTabs()` shows the owner as `agent`. Tabs left by runs with no agent are free for any run to use.
 
-Subagents started by one Claude Code session share its session, and so its tabs. Give each one its own `--agent` name if they should not share.
+An agent lets go of its tabs when it ends. apart records the agent's process (the Claude Code process, or `APART_AGENT_PID` if you set it), and once that process has exited, the tabs stay open but any run can use them. Without a known process, ownership lasts until the tab closes or the browser restarts.
+
+Subagents started by one Claude Code session share its session and its process, so apart cannot tell them apart. Have each subagent pass its own `--agent` name if they should not share tabs. Their tabs are then let go when the whole session ends.
 
 ### Optional: gstack
 
