@@ -165,11 +165,12 @@ export function cleanAgent(raw: unknown): string | undefined {
 export type CliRequest =
   | { type: "run"; code: string; timeoutMs?: number; browser?: RunBrowser; agent?: string; agentPid?: number }
   | { type: "status" }
-  | { type: "stop" }
+  | { type: "stop"; pid?: number }
   | { type: "config-changed" };
 
 export interface DaemonStatus {
   type: "status";
+  version?: string;
   pid: number;
   port: number;
   uptimeMs: number;

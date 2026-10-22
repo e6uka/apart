@@ -120,6 +120,7 @@ export async function runDaemon(options: { port: number; version: string }): Pro
 
   const status = (): DaemonStatus => ({
     type: "status",
+    version: options.version,
     pid: process.pid,
     port: options.port,
     uptimeMs: Date.now() - startedAt,
@@ -223,6 +224,10 @@ export async function runDaemon(options: { port: number; version: string }): Pro
           void announceConfig().then(() => write(socket, { type: "ok" }), () => write(socket, { type: "ok" }));
         }
         else if (request.type === "stop") {
+          if (request.pid !== undefined && request.pid !== process.pid) {
+            write(socket, { type: "ok" });
+            continue;
+          }
           write(socket, { type: "stopping" });
           socket.end();
           void shutdown();

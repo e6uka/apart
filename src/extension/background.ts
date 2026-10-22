@@ -387,8 +387,27 @@ function connect(): Promise<void> {
   return connecting;
 }
 
+async function daemonAnswers(port: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    await fetch(`http://127.0.0.1:${port}/`, { mode: "no-cors", cache: "no-store", credentials: "omit", signal: controller.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function openSocket(): Promise<void> {
   const port = await getPort();
+  if (!(await daemonAnswers(port))) {
+    void chrome.storage.local.set({ current: null });
+    scheduleRetry();
+    await setStatus("disconnected", `No daemon answered on port ${port}.`);
+    return;
+  }
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ext`);
   socket = ws;
   ws.onopen = () => {

@@ -153,7 +153,28 @@ async function spawnDaemon(port: number): Promise<void> {
   child.unref();
 }
 
+async function replaceOutdatedDaemon(): Promise<void> {
+  if (VERSION === "dev") return;
+  const status = await daemonStatus();
+  if (!status || status.version === VERSION || status.running) return;
+  let socket: net.Socket;
+  try {
+    socket = await connectSocket();
+  } catch {
+    return;
+  }
+  await talk(socket, { type: "stop", pid: status.pid }, (message) => message.type === "stopping" || message.type === "ok");
+  const deadline = Date.now() + DAEMON_START_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const current = await daemonStatus();
+    if (!current || current.pid !== status.pid) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  process.stderr.write(`apart: restarted the background daemon (it was running ${status.version ?? "an older version"}, this is ${VERSION})\n`);
+}
+
 async function ensureDaemon(port: number): Promise<net.Socket> {
+  await replaceOutdatedDaemon();
   try {
     return await connectSocket();
   } catch {
@@ -310,7 +331,8 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
     console.log("daemon: not running");
     return 1;
   }
-  console.log(`daemon: running (pid ${status.pid}, port ${status.port}, up ${Math.round(status.uptimeMs / 1000)}s${status.running ? ", script running" : ""})`);
+  const outdated = VERSION !== "dev" && status.version !== VERSION ? `; it runs ${status.version ?? "an older version"}, the next run restarts it as ${VERSION}` : "";
+  console.log(`daemon: running (${status.version ? `${status.version}, ` : ""}pid ${status.pid}, port ${status.port}, up ${Math.round(status.uptimeMs / 1000)}s${status.running ? ", script running" : ""}${outdated})`);
   console.log(`browsers: ${status.browsers.length ? status.browsers.map((item) => `${item.name} (extension ${item.version})`).join(", ") : "none connected"}`);
   console.log(`default browser: ${status.defaultBrowser}`);
   console.log(`tabs at script end: ${status.keepTabs ? "left open" : "closed"}`);
