@@ -67,6 +67,7 @@ export interface HeadlessOptions {
 }
 
 export class HeadlessBrowser extends EventEmitter implements BrowserBackend {
+  readonly headless = true;
   private child: ChildProcess | null = null;
   private input: Writable | null = null;
   private starting: Promise<void> | null = null;

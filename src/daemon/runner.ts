@@ -12,6 +12,8 @@ export interface RunOptions {
   timeoutMs: number;
   bridge: BrowserBackend;
   keepTabs?: boolean;
+  agent?: string;
+  agentPid?: number;
   emit: (text: string) => void;
 }
 
@@ -32,6 +34,7 @@ export interface BrowserTab {
   url: string;
   title: string;
   active: boolean;
+  agent?: string;
 }
 
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
@@ -47,7 +50,16 @@ function isErrorLike(value: unknown): value is { name: string; message: string }
 }
 
 function toTab(info: TabInfo): BrowserTab {
-  return { targetId: String(info.tabId), url: info.url, title: info.title, active: info.active };
+  return { targetId: String(info.tabId), url: info.url, title: info.title, active: info.active, ...(info.agent ? { agent: info.agent } : {}) };
+}
+
+export function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
 function formatValue(value: unknown): string {
@@ -76,12 +88,25 @@ class Session {
   page: Page | null = null;
   aborted = false;
 
-  constructor(private readonly bridge: BrowserBackend, private readonly runDir: string, private readonly log: (text: string) => void = () => undefined) {}
+  private freed: Promise<void> | null = null;
+
+  constructor(private readonly bridge: BrowserBackend, private readonly runDir: string, private readonly log: (text: string) => void = () => undefined, private readonly agent?: string, private readonly agentPid?: number) {}
+
+  freeTabsOfEndedAgents(): Promise<void> {
+    if (this.bridge.headless) return Promise.resolve();
+    this.freed ??= (async () => {
+      const tabs = await this.bridge.listTabs();
+      const tabIds = tabs.filter((tab) => tab.agent && tab.agentPid && !processAlive(tab.agentPid)).map((tab) => tab.tabId);
+      if (tabIds.length) await this.bridge.request("tabs.disown", { tabIds });
+    })().catch(() => undefined);
+    return this.freed;
+  }
 
   async openTab(url = "about:blank", options: OpenTabOptions = {}): Promise<Page> {
     this.assertActive();
+    if (url !== "about:blank" && !options.newTab) await this.freeTabsOfEndedAgents();
     const reused = url !== "about:blank" && !options.newTab
-      ? await this.bridge.request<TabInfo | null>("tabs.reuse", { url }).catch(() => null)
+      ? await this.bridge.request<TabInfo | null>("tabs.reuse", { url, ...(this.agent ? { agent: this.agent } : {}), ...(this.agent && this.agentPid ? { agentPid: this.agentPid } : {}) }).catch(() => null)
       : null;
     const info = reused ?? await this.bridge.request<TabInfo>("tabs.create", { url: "about:blank" });
     if (!reused) this.tabsOpened += 1;
@@ -102,6 +127,7 @@ class Session {
   }
 
   async listBrowserTabs(): Promise<BrowserTab[]> {
+    await this.freeTabsOfEndedAgents();
     return (await this.bridge.listTabs()).map(toTab);
   }
 
@@ -112,8 +138,12 @@ class Session {
       this.page = existing;
       return existing;
     }
+    await this.freeTabsOfEndedAgents();
     const info = (await this.bridge.listTabs()).find((tab) => String(tab.tabId) === String(targetId));
     if (!info) throw new Error(`No open browser tab found for targetId ${targetId}`);
+    if (info.agent && info.agent !== this.agent) {
+      throw new Error(`Tab ${targetId} belongs to agent "${info.agent}". Open your own tab with openTab(url) instead.`);
+    }
     return this.attach(info.tabId, "borrowed", info.url);
   }
 
@@ -130,7 +160,7 @@ class Session {
 
   async cleanup(keepTabs = false): Promise<void> {
     this.aborted = true;
-    await Promise.allSettled(this.tabs.map((tab) => (keepTabs && tab.ownership === "owned" ? tab.leaveOpen() : tab.close())));
+    await Promise.allSettled(this.tabs.map((tab) => (keepTabs && tab.ownership === "owned" ? tab.leaveOpen(this.agent, this.agentPid) : tab.close())));
     this.tabs.length = 0;
     this.page = null;
   }
@@ -155,7 +185,7 @@ class Session {
 export async function runScript(options: RunOptions): Promise<RunResult> {
   const started = Date.now();
   let emitLine: (text: string) => void = () => undefined;
-  const session = new Session(options.bridge, options.runDir, (text) => emitLine(text));
+  const session = new Session(options.bridge, options.runDir, (text) => emitLine(text), options.agent, options.agentPid);
   const confinedFs = createConfinedFs(options.runDir);
   const timers = new Set<NodeJS.Timeout>();
   const abort = new AbortController();
