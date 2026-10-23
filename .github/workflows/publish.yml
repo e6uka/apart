@@ -60,6 +60,6 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           if ! gh release view "v$VERSION" >/dev/null 2>&1; then
-            gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+            gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "apart $VERSION" --generate-notes
           fi
-          echo "apart-browser $VERSION is staged. Approve it on npmjs.com (Packages, apart-browser, Staged versions), then publish the draft GitHub release v$VERSION." >> "$GITHUB_STEP_SUMMARY"
+          echo "apart-browser $VERSION is staged. Approve it on npmjs.com (Packages, apart-browser, Staged versions); the Release workflow publishes the GitHub release v$VERSION within 30 minutes of it going live." >> "$GITHUB_STEP_SUMMARY"

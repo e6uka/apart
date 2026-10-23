@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Publish the GitHub release once the version is live on npm
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          if ! npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is not live on npm yet; leaving the GitHub release alone."
+            exit 0
+          fi
+          state=$(gh release view "$tag" --json isDraft -q 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo missing)
+          case "$state" in
+            published)
+              echo "$tag is already published on GitHub."
+              ;;
+            draft)
+              gh release edit "$tag" --title "apart $version" --draft=false --latest
+              echo "Published the $tag GitHub release." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            missing)
+              gh release create "$tag" --target "$GITHUB_SHA" --title "apart $version" --generate-notes --latest
+              echo "Created and published the $tag GitHub release." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac
