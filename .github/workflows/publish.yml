@@ -3,6 +3,7 @@ name: Publish
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -41,7 +42,7 @@ jobs:
       - if: steps.version.outputs.publish == 'true'
         run: npm install -g npm@11
       - if: steps.version.outputs.publish == 'true'
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --loglevel verbose
       - if: steps.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
