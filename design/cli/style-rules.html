@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>apart CLI style rules</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#EE6AAA}a:hover{color:#F6EEF3}
+</style>
+<div style="width: 820px; height: 640px; box-sizing: border-box; padding: 48px; background: #1B1620; color: #F6EEF3; font-family: Figtree, system-ui, sans-serif; display: flex; flex-direction: column; gap: 28px; border-radius: 12px">
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; align-items: center; gap: 12px">
+      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="8" width="24" height="18" rx="4" fill="#F6EEF3"></rect><rect x="2" y="8" width="24" height="5" rx="2" fill="#B3A6B4"></rect><rect x="15" y="2" width="9" height="4" rx="2" fill="#EE6AAA"></rect></svg>
+      <h1 style="margin: 0; font-size: 32px; font-weight: 700">apart CLI</h1>
+    </div>
+    <p style="margin: 0; font-size: 16px; color: #B3A6B4">One look for every screen a person reads. Agent output stays exactly as it is.</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+    <div style="background: #241D2A; border: 1px solid #3A3040; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 8px">
+      <h2 style="margin: 0; font-size: 16px; font-weight: 700">For people</h2>
+      <p style="margin: 0; font-size: 14px; line-height: 22px; color: #B3A6B4">setup, doctor, daemon status, config, --help. Grouped under short headings, columns aligned, coloured in a terminal.</p>
+    </div>
+    <div style="background: #241D2A; border: 1px solid #3A3040; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 8px">
+      <h2 style="margin: 0; font-size: 16px; font-weight: 700">For agents</h2>
+      <p style="margin: 0; font-size: 14px; line-height: 22px; color: #B3A6B4">repl, guide, single config values. Plain text in a stable shape. The last line of repl is always [ok …] or [error …].</p>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 12px">
+    <h2 style="margin: 0; font-size: 16px; font-weight: 700">Marks and colours</h2>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; font-size: 14px">
+      <div style="display: flex; gap: 10px; align-items: center"><span style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #5CC79A; font-weight: 700; width: 18px">✓</span><span>Works</span></div>
+      <div style="display: flex; gap: 10px; align-items: center"><span style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #FF8A80; font-weight: 700; width: 18px">✗</span><span>Problem, with a fix below it</span></div>
+      <div style="display: flex; gap: 10px; align-items: center"><span style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #B3A6B4; width: 18px">·</span><span>For your information</span></div>
+      <div style="display: flex; gap: 10px; align-items: center"><span style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #EE6AAA; width: 18px">→</span><span>What to do next</span></div>
+      <div style="display: flex; gap: 10px; align-items: center"><span style="font-family: 'JetBrains Mono', ui-monospace, monospace; color: #EE6AAA; width: 18px">ab</span><span>Command to copy</span></div>
+      <div style="display: flex; gap: 10px; align-items: center"><span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700; width: 18px">ab</span><span>Section heading</span></div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <h2 style="margin: 0; font-size: 16px; font-weight: 700">Rules</h2>
+    <ul style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 24px; color: #F6EEF3">
+      <li>Colour only in a terminal. Off when piped, with NO_COLOR or TERM=dumb; FORCE_COLOR=1 turns it on.</li>
+      <li>Status never by colour alone: the mark says it too.</li>
+      <li>Every problem ends with the command that fixes it.</li>
+      <li>Your home folder shows as ~. Lines fit in 80 columns.</li>
+      <li>doctor and daemon status take --json, for scripts.</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>apart daemon status and config</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.t>div{white-space:pre;min-height:22px}
+</style>
+<div style="width: 820px; height: 430px; box-sizing: border-box; background: #1B1620; color: #F6EEF3; border: 1px solid #3A3040; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; font-family: 'JetBrains Mono', ui-monospace, monospace">
+  <div style="height: 40px; flex-shrink: 0; background: #241D2A; border-bottom: 1px solid #3A3040; display: flex; align-items: center; gap: 8px; padding: 0 16px">
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span style="flex-grow: 1; text-align: center; font-size: 12px; color: #B3A6B4; margin-right: 52px">zsh</span>
+  </div>
+  <div class="t" style="padding: 24px 28px; font-size: 13.5px; line-height: 22px">
+<div><span style="color: #B3A6B4">$</span> apart daemon status</div>
+<div></div>
+<div><span style="color: #5CC79A; font-weight: 700">✓</span> <span style="font-weight: 700">Daemon</span>     running <span style="color: #B3A6B4">· 0.6.0 · pid 59622 · port 27170 · up 2h 14m</span></div>
+<div>  <span style="font-weight: 700">Browsers</span>   dia, chrome <span style="color: #B3A6B4">· both on extension 0.6.0</span></div>
+<div>  <span style="font-weight: 700">Default</span>    dia</div>
+<div>  <span style="font-weight: 700">Tabs</span>       close when a script ends</div>
+<div>  <span style="font-weight: 700">Headless</span>   idle <span style="color: #B3A6B4">· starts on the next --headless run</span></div>
+<div></div>
+<div><span style="color: #B3A6B4">$</span> apart config</div>
+<div></div>
+<div>default-browser  dia</div>
+<div>keep-tabs        off</div>
+<div></div>
+<div><span style="color: #B3A6B4">$</span> apart doctor --json | jq .problems</div>
+<div>0</div>
+  </div>
+</div>
+</body>
+</html>
