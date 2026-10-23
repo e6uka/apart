@@ -22,7 +22,6 @@ jobs:
         with:
           node-version: 22
           cache: yarn
-          registry-url: https://registry.npmjs.org
       - name: Check whether this version is already on npm
         id: version
         run: |
