@@ -284,4 +284,4 @@ cd apart
 
 This builds the checkout and links it as `~/.local/bin/apart`. Run from a checkout, apart uses `dist/extension` directly instead of copying it, so load that folder and `yarn watch` changes show up after a reload. `yarn test` runs the tests.
 
-Releases go out from `main`: when a merge lands with a version in `package.json` that npm does not have yet, the Publish workflow tests it, publishes `apart-browser` to npm with provenance and creates a GitHub release named after the version. Bump the version in `package.json` and `src/extension/manifest.json` together.
+Releases go out from `main`: when a merge lands with a version in `package.json` that npm does not have yet, the Publish workflow tests it, stages `apart-browser` on npm with provenance and drafts a GitHub release named after the version. Nothing reaches users until a maintainer approves the staged version on npmjs.com with two-factor authentication (or `npm stage approve`); then publish the draft release. The workflow can also be run by hand from the Actions tab. Bump the version in `package.json` and `src/extension/manifest.json` together.

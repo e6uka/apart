@@ -41,10 +41,25 @@ jobs:
         run: yarn test
       - if: steps.version.outputs.publish == 'true'
         run: npm install -g npm@11
-      - if: steps.version.outputs.publish == 'true'
-        run: npm publish --provenance --access public --loglevel verbose
-      - if: steps.version.outputs.publish == 'true'
+      - name: Stage the release on npm
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          set +e
+          npm stage publish --provenance --access public > stage.log 2>&1
+          status=$?
+          cat stage.log
+          if [ $status -ne 0 ] && grep -q "previously staged" stage.log; then
+            echo "This version is already staged and waiting for approval on npmjs.com."
+            exit 0
+          fi
+          exit $status
+      - name: Draft the GitHub release
+        if: steps.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
-        run: gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+        run: |
+          if ! gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release create "v$VERSION" --draft --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+          fi
+          echo "apart-browser $VERSION is staged. Approve it on npmjs.com (Packages, apart-browser, Staged versions), then publish the draft GitHub release v$VERSION." >> "$GITHUB_STEP_SUMMARY"
