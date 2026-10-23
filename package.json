@@ -1,6 +1,6 @@
 {
   "name": "apart-browser",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Drive your real, signed-in Chrome from the terminal with Playwright-style scripts",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,6 @@
   "files": [
     "dist/apart.js",
     "dist/injected",
-    "dist/extension",
     "PRIVACY.md"
   ],
   "engines": {
