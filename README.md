@@ -40,12 +40,12 @@ No browser fork, no remote debugging port and no cloud service are involved: eve
 
 Each run uses one browser:
 
-- **Your browsers** (`--browser chrome`, `--browser arc`, …): any Chromium-based browser you have loaded the extension into, such as Chrome, Arc, Brave or Edge, signed in as you. You can watch it work. Several can be connected at once.
+- **Your browsers** (`--browser chrome`, `--browser arc`, …): any Chromium-based browser you have loaded the extension into, such as Chrome, Arc, Dia, Brave or Edge, signed in as you. You can watch it work. Several can be connected at once.
 - **Headless** (`--headless`): a hidden Chrome the daemon starts itself, with its own signed-out profile in `~/.apart/headless-profile`. It needs no extension and works while your browsers are closed. The daemon talks to it over a pipe, not a network port, starts it on the first headless run and closes it after five idle minutes.
 
-The daemon names each connected browser after its app (`chrome`, `arc`, `brave`, `edge`). To use two profiles of the same browser at once, give one its own name in that profile's extension Settings; otherwise the newest connection takes over. `apart daemon status` lists what is connected.
+The daemon names each connected browser after its app (`chrome`, `arc`, `dia`, `brave`, `edge`). To use two profiles of the same browser at once, give one its own name in that profile's extension Settings; otherwise the newest connection takes over. `apart daemon status` lists what is connected.
 
-Runs without a flag use your default browser. `./install.sh` asks for it the first time; change it later in the extension's Settings or with `apart config default-browser <name>`. Scripts in different browsers run at the same time; scripts in the same browser run one after another. Every run appears in the Activity page of each connected browser.
+Runs without a flag use your default browser. `apart setup` asks for it the first time; change it later in the extension's Settings or with `apart config default-browser <name>`. Scripts in different browsers run at the same time; scripts in the same browser run one after another. Every run appears in the Activity page of each connected browser.
 
 Safari is not supported: it gives extensions no way to control tabs, and its automation mode runs in a separate, signed-out window.
 
@@ -59,24 +59,27 @@ Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart
 
 ## Requirements
 
-- macOS or Linux, Node.js 22 or newer, yarn
-- Google Chrome, Arc, Brave, Edge or another Chromium-based browser (Chromium 125 or newer)
+- macOS or Linux, Node.js 22 or newer
+- Google Chrome, Arc, Dia, Brave, Edge or another Chromium-based browser (Chromium 125 or newer)
 
 ## Install
 
 ```bash
-git clone https://github.com/e6uka/apart.git
-cd apart
-./install.sh
+npm install -g apart-browser   # or: yarn global add apart-browser
+apart setup
 ```
 
-The installer asks which browser runs should use by default (pass `--browser=<name>` to skip the question). Then load the extension once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`), turn on **Developer mode**, click **Load unpacked** and choose `dist/extension` (print its path with `apart extension-path`). Finish with:
+The npm package is called `apart-browser`, and the command it installs is `apart`. `apart setup` asks which browser runs should use by default (pass `--browser <name>` to skip the question) and prints the folder to load the extension from. Load the extension once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`; in Dia, `dia://extensions`), turn on **Developer mode**, click **Load unpacked** and choose that folder (`apart extension-path` prints it again; it is `~/.apart/extension`). Finish with:
 
 ```bash
 apart doctor
 ```
 
+apart keeps its copy of the extension in `~/.apart/extension`, so the folder stays put when npm or your Node version manager moves the package. After you update apart (`npm install -g apart-browser@latest`), the next run refreshes that copy; click the reload icon on apart in `chrome://extensions` and `apart doctor` stops reporting the old version.
+
 `doctor` starts the daemon, checks the extension and the browser for headless runs, and tells you what, if anything, is missing. Chrome shows an "apart is debugging this browser" bar while a script runs; that is Chrome's standard notice for `chrome.debugger`.
+
+To uninstall: `apart daemon stop`, `npm uninstall -g apart-browser`, remove apart in `chrome://extensions`, then delete `~/.apart` (settings, run history and the extension copy) and `~/.local/bin/aside` if you made it.
 
 ## Using it from an agent
 
@@ -105,7 +108,7 @@ Subagents started by one Claude Code session share its session and its process, 
 If you use [gstack](https://github.com/garrytan/gstack), its `/browse`, `/scrape`, `/qa` and `/design-review` skills can run through apart instead of gstack's own browser, so their runs appear in apart's Activity page. They look for a command named `aside` (on `PATH` or at `~/.local/bin/aside`), so install apart under that name as well:
 
 ```bash
-./install.sh --gstack
+apart setup --gstack
 ```
 
 This adds `~/.local/bin/aside` as a second link to the same binary. It is never created by default, and the installer skips it if a different program already uses that name. gstack calls `aside repl` without a flag, so its skills use apart's default browser: headless, or your Chrome. With your Chrome as the default and the extension not connected, they fall back to gstack's own headless browser as before. To undo it, delete `~/.local/bin/aside`.
@@ -115,12 +118,13 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 | Command | What it does |
 | --- | --- |
 | `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--browser <name>` (or `--headless`, `--chrome`) to pick the browser for this run, `--agent <name>` to say which agent is running it (see [Tabs and agents](#tabs-and-agents)). Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
+| `apart setup` | Choose the default browser (`--browser <name>` skips the question) and print how to load the extension. `--gstack` also links `~/.local/bin/aside` for gstack. |
 | `apart guide` | Print the guide for coding agents: how to write scripts, the tab rules and what to do when something fails, plus the agent name this shell's runs belong to. |
 | `apart config default-browser <name>` | Set the browser runs use without a flag. `apart config` shows the current settings. |
 | `apart config keep-tabs on\|off` | Leave tabs a script opened in your Chrome open when it ends, instead of closing them. Also in the extension's Settings. |
 | `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. |
 | `apart doctor` | Check Node, the build, the shims, the daemon, the extension and the browser for headless runs. |
-| `apart extension-path` | Print the unpacked extension directory. |
+| `apart extension-path` | Print the extension folder to load in your browser (`~/.apart/extension`). |
 | `apart skills list` | Prints that no skills are installed (kept for gstack compatibility). |
 | `apart exec` | Not supported; apart has no autonomous agent. |
 
@@ -265,3 +269,13 @@ apart has no servers, accounts or analytics, and nothing it handles leaves your 
 ## License
 
 MIT
+
+## Working on apart
+
+```bash
+git clone https://github.com/e6uka/apart.git
+cd apart
+./install.sh
+```
+
+This builds the checkout and links it as `~/.local/bin/apart`. Run from a checkout, apart uses `dist/extension` directly instead of copying it, so load that folder and `yarn watch` changes show up after a reload. `yarn test` runs the tests. `npm publish` builds before it packs.

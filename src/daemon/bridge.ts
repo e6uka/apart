@@ -27,7 +27,7 @@ export class ExtensionNotConnectedError extends Error {
   constructor(name?: string) {
     super(name
       ? `${browserLabel(name)} is not connected. Open it with the apart extension loaded, then run \`apart doctor\`.`
-      : "No browser is connected. Load dist/extension in Chrome or Arc, then run `apart doctor`.");
+      : "No browser is connected. Load the apart extension (`apart extension-path` prints its folder) in your browser, then run `apart doctor`.");
     this.name = "ExtensionNotConnectedError";
   }
 }

@@ -12,6 +12,13 @@ describe("browser names", () => {
     expect(nameFromProcess("/usr/bin/node")).toBeNull();
   });
 
+  it("tells Dia apart from Arc, though Dia runs on Arc's engine", () => {
+    expect(nameFromProcess("/Applications/Dia.app/Contents/Frameworks/ArcCore.framework/Helpers/Browser Helper.app/Contents/MacOS/Browser Helper")).toBe("dia");
+    expect(nameFromProcess("/Applications/Dia.app/Contents/MacOS/Dia")).toBe("dia");
+    expect(nameFromBrands(["Not)A;Brand", "Dia", "Chromium"])).toBe("dia");
+    expect(browserLabel("dia")).toBe("Dia");
+  });
+
   it("falls back to the browser's brand list", () => {
     expect(nameFromBrands(["Not)A;Brand", "Microsoft Edge", "Chromium"])).toBe("edge");
     expect(nameFromBrands(["Chromium", "Google Chrome"])).toBe("chrome");
