@@ -6,6 +6,8 @@ import type { BrowserBackend, TabEvent } from "./backend";
 import { browserLabel, isExtensionBrowserName, nameFromBrands, nameFromProcess } from "../shared/browsers";
 import {
   PROTOCOL_VERSION,
+  STORE_EXTENSION_IDS,
+  STORE_URL,
   type DaemonInfo,
   type DaemonToExt,
   type ExtHello,
@@ -27,7 +29,7 @@ export class ExtensionNotConnectedError extends Error {
   constructor(name?: string) {
     super(name
       ? `${browserLabel(name)} is not connected. Open it with the apart extension loaded, then run \`apart doctor\`.`
-      : "No browser is connected. Load the apart extension (`apart extension-path` prints its folder) in your browser, then run `apart doctor`.");
+      : `No browser is connected. Add the apart extension to your browser from the Chrome Web Store (${STORE_URL}), then run \`apart doctor\`.`);
     this.name = "ExtensionNotConnectedError";
   }
 }
@@ -54,7 +56,7 @@ export class ExtensionConnection extends EventEmitter implements BrowserBackend 
   private pending = new Map<number, Pending>();
   private nextId = 1;
 
-  constructor(readonly name: string, readonly version: string, private readonly ws: WebSocket) {
+  constructor(readonly name: string, readonly version: string, private readonly ws: WebSocket, readonly store = false) {
     super();
   }
 
@@ -147,8 +149,8 @@ export class ExtensionBridge extends EventEmitter implements BrowserBackend {
     return this.latest()?.version ?? null;
   }
 
-  browsers(): { name: string; version: string }[] {
-    return Array.from(this.connections.values()).map((connection) => ({ name: connection.name, version: connection.version }));
+  browsers(): { name: string; version: string; store: boolean }[] {
+    return Array.from(this.connections.values()).map((connection) => ({ name: connection.name, version: connection.version, store: connection.store }));
   }
 
   connection(name?: string): ExtensionConnection | undefined {
@@ -272,7 +274,7 @@ export class ExtensionBridge extends EventEmitter implements BrowserBackend {
       this.connections.delete(name);
       previous.close(1012, "replaced by newer connection");
     }
-    const connection = new ExtensionConnection(name, hello.extensionVersion, ws);
+    const connection = new ExtensionConnection(name, hello.extensionVersion, ws, STORE_EXTENSION_IDS.some((id) => req.headers.origin === `chrome-extension://${id}`));
     this.connections.set(name, connection);
     ws.send(JSON.stringify({ type: "welcome", daemon: this.info, browser: name }));
     this.emit("connected", connection, hello);

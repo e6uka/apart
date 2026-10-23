@@ -11,16 +11,15 @@ import { browserLabel, HEADLESS } from "../shared/browsers";
 import { isBrowser, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, LOG_DIR, SOCKET_PATH } from "../shared/paths";
 import { createStyle, extensionsPage, formatUptime, MARK, tilde, type Style } from "./style";
-import { DEFAULT_PORT, cleanAgent, cleanPid, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
+import { DEFAULT_PORT, STORE_URL, cleanAgent, cleanPid, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
 
 declare const __APART_VERSION__: string;
 
 const VERSION = typeof __APART_VERSION__ === "string" ? __APART_VERSION__ : "dev";
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const DIST_DIR = path.dirname(SCRIPT_PATH);
-const BUNDLED_EXTENSION_DIR = path.join(DIST_DIR, "extension");
+const EXTENSION_DIR = path.join(DIST_DIR, "extension");
 const RUNS_FROM_CHECKOUT = existsSync(path.join(DIST_DIR, "..", ".git"));
-const EXTENSION_DIR = RUNS_FROM_CHECKOUT ? BUNDLED_EXTENSION_DIR : path.join(APART_HOME, "extension");
 const PACKAGE_NAME = "apart-browser";
 const GSTACK_LINK = path.join(os.homedir(), ".local", "bin", "aside");
 const DAEMON_START_TIMEOUT_MS = 8000;
@@ -44,9 +43,8 @@ function help(style: Style = createStyle()): string {
     option("--timeout <ms>", "Default 120000, at most 600000"),
     "",
     bold("Set up"),
-    row("apart setup", "Choose the default browser, load the extension"),
+    row("apart setup", "Choose the default browser, add the extension"),
     row("apart doctor", "Check everything and say what to fix"),
-    row("apart extension-path", "Print the extension folder"),
     "",
     bold("Settings"),
     row("apart config", "Show settings"),
@@ -101,7 +99,7 @@ Tabs belong to agents
   - Subagents share their parent session. If you are a subagent, or one of several agents
     in the same session, pass your own name on every run: --agent <short-task-name>.
   - Ownership needs the browser extension to match this version of apart. If apart doctor
-    says the extension is older, tell the user to reload it.
+    says the extension is out of date, tell the user what it says to do.
 
 Choosing the browser
   - Without a flag, runs use the user's default browser. --headless runs signed out in a
@@ -161,27 +159,54 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-async function manifestVersion(dir: string): Promise<string | null> {
-  try {
-    return (JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8")) as { version?: string }).version ?? null;
-  } catch {
-    return null;
+function compareVersions(a: string, b: string): number {
+  const left = a.split(".").map(Number);
+  const right = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const diff = (left[i] || 0) - (right[i] || 0);
+    if (diff) return Math.sign(diff);
   }
+  return 0;
 }
 
-async function syncExtension(): Promise<void> {
-  if (RUNS_FROM_CHECKOUT) return;
-  const bundled = await manifestVersion(BUNDLED_EXTENSION_DIR);
-  if (!bundled || bundled === (await manifestVersion(EXTENSION_DIR))) return;
-  const temp = `${EXTENSION_DIR}.${process.pid}.tmp`;
-  await fs.rm(temp, { recursive: true, force: true });
-  await fs.cp(BUNDLED_EXTENSION_DIR, temp, { recursive: true });
-  await fs.rm(EXTENSION_DIR, { recursive: true, force: true });
-  await fs.rename(temp, EXTENSION_DIR);
+function addExtensionSteps(browser: string): string[] {
+  return RUNS_FROM_CHECKOUT
+    ? [`Open \`${extensionsPage(browser)}\` and turn on Developer mode`, `Click Load unpacked and choose \`${tilde(EXTENSION_DIR)}\``]
+    : [`Open \`${STORE_URL}\` in ${browserLabel(browser)}`, "Click Add to Chrome (some browsers say Get or Add)"];
+}
+
+type ExtensionAdvice = { status: "problem" | "info"; detail: string; fix: string[] };
+
+function extensionAdvice(item: { name: string; version: string; store?: boolean }): ExtensionAdvice | null {
+  if (VERSION === "dev") return null;
+  if (item.store === false && !RUNS_FROM_CHECKOUT) {
+    return {
+      status: "problem",
+      detail: `extension ${item.version}, an unpacked copy`,
+      fix: [`Add apart from the Chrome Web Store: \`${STORE_URL}\``, `Then remove the unpacked copy in \`${extensionsPage(item.name)}\``],
+    };
+  }
+  const order = compareVersions(item.version, VERSION);
+  if (order === 0) return null;
+  if (item.store !== true) return { status: "problem", detail: `extension ${item.version}, but apart is ${VERSION}`, fix: [`Reload apart in \`${extensionsPage(item.name)}\``] };
+  if (order > 0) return { status: "problem", detail: `extension ${item.version}, but apart is ${VERSION}`, fix: [`\`npm install -g ${PACKAGE_NAME}@latest\``] };
+  return {
+    status: "info",
+    detail: `extension ${item.version}, apart is ${VERSION}; the store update is on its way`,
+    fix: [`To update now, turn on Developer mode in \`${extensionsPage(item.name)}\` and click Update`],
+  };
+}
+
+async function openInBrowser(browser: string, url: string): Promise<boolean> {
+  if (process.platform !== "darwin") return false;
+  const app = MAC_APPS.find(([name]) => name === browser)?.[1];
+  if (!app || !existsSync(app)) return false;
+  return new Promise((resolve) => {
+    spawn("open", ["-a", app, url], { stdio: "ignore" }).once("exit", (code) => resolve(code === 0)).once("error", () => resolve(false));
+  });
 }
 
 async function spawnDaemon(port: number): Promise<void> {
-  await syncExtension().catch(() => {});
   await fs.mkdir(LOG_DIR, { recursive: true });
   const logFile = openSync(path.join(LOG_DIR, "daemon.log"), "a");
   const child = spawn(process.execPath, [SCRIPT_PATH, "daemon", "run", "--port", String(port)], {
@@ -507,20 +532,13 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
     : { status: "problem", label: "Node", detail: `${process.versions.node}, but apart needs 22 or newer`, fix: ["Install a newer Node from `https://nodejs.org`"] });
 
   const self = await fs.realpath(SCRIPT_PATH).catch(() => SCRIPT_PATH);
-  const built = existsSync(path.join(DIST_DIR, "injected", "snapshot.js")) && existsSync(path.join(BUNDLED_EXTENSION_DIR, "manifest.json"));
+  const built = existsSync(path.join(DIST_DIR, "injected", "snapshot.js")) && (!RUNS_FROM_CHECKOUT || existsSync(path.join(EXTENSION_DIR, "manifest.json")));
   const onPath = await findOnPath("apart");
   const onPathSelf = onPath !== null && (await fs.realpath(onPath).catch(() => null)) === self;
   if (!built) system.checks.push({ status: "problem", label: "apart", detail: `files missing in ${tilde(DIST_DIR)}`, fix: [RUNS_FROM_CHECKOUT ? "`yarn build`" : `\`npm install -g ${PACKAGE_NAME}\``] });
   else if (onPath === null) system.checks.push({ status: "problem", label: "apart", detail: "not on PATH", fix: [`\`npm install -g ${PACKAGE_NAME}\`, or \`yarn global add ${PACKAGE_NAME}\``] });
   else if (onPathSelf) system.checks.push({ status: "ok", label: "apart", detail: `${VERSION}  ${tilde(onPath)}` });
   else system.checks.push({ status: "info", label: "apart", detail: `${VERSION} at ${tilde(self)}; another copy is first on PATH: ${tilde(onPath)}` });
-
-  try {
-    await syncExtension();
-    system.checks.push({ status: "ok", label: "Extension", detail: tilde(EXTENSION_DIR) });
-  } catch (error) {
-    system.checks.push({ status: "problem", label: "Extension", detail: `could not copy it to ${tilde(EXTENSION_DIR)}: ${error instanceof Error ? error.message : String(error)}` });
-  }
 
   let status = await daemonStatus();
   if (!status) {
@@ -533,14 +551,11 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   }
   if (status) {
     daemon.checks.push({ status: "ok", label: "Running", detail: `port ${status.port} · pid ${status.pid} · up ${formatUptime(status.uptimeMs)}` });
-    const loadSteps = (browser: string) => [
-      `Open \`${extensionsPage(browser)}\` and turn on Developer mode`,
-      `Click Load unpacked and choose \`${tilde(EXTENSION_DIR)}\``,
-    ];
+    const loadSteps = addExtensionSteps;
     for (const item of status.browsers) {
-      if (VERSION !== "dev" && item.version !== VERSION) {
-        browsers.checks.push({ status: "problem", label: browserLabel(item.name), detail: `extension ${item.version}, but apart is ${VERSION}`, fix: [`Reload apart in \`${extensionsPage(item.name)}\``] });
-      } else browsers.checks.push({ status: "ok", label: browserLabel(item.name), detail: `extension ${item.version}` });
+      const advice = extensionAdvice(item);
+      if (advice) browsers.checks.push({ label: browserLabel(item.name), ...advice });
+      else browsers.checks.push({ status: "ok", label: browserLabel(item.name), detail: `extension ${item.version}` });
     }
     const defaultConnected = config.defaultBrowser === HEADLESS || status.browsers.some((item) => item.name === config.defaultBrowser);
     if (status.browsers.length === 0 && config.defaultBrowser === HEADLESS) {
@@ -639,7 +654,7 @@ async function askDefaultBrowser(style: Style, current: string | undefined): Pro
   }
 }
 
-type ConnectResult = { name: string; version: string } | "skipped" | "timeout";
+type ConnectResult = { name: string; version: string; store?: boolean } | "skipped" | "timeout";
 
 async function waitForBrowser(browser: string, port: number, style: Style): Promise<ConnectResult> {
   (await ensureDaemon(port)).destroy();
@@ -688,7 +703,6 @@ async function commandSetup(flags: Map<string, string | true>): Promise<number> 
   const { accent, bold, dim, ok, bad } = style;
   const port = Number(flags.get("port") ?? DEFAULT_PORT);
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
-  await syncExtension();
   const config = await readConfig();
   let browser = typeof flags.get("browser") === "string" ? (flags.get("browser") as string) : flags.has("headless") ? HEADLESS : undefined;
   if (browser === undefined && interactive) browser = await askDefaultBrowser(style, config.saved ? config.defaultBrowser : undefined);
@@ -709,28 +723,29 @@ async function commandSetup(flags: Map<string, string | true>): Promise<number> 
   }
   console.log("");
 
-  const steps = (name: string) => [
-    `  1  Open ${accent(extensionsPage(name))} and turn on Developer mode`,
-    `  2  Click Load unpacked and choose ${accent(tilde(EXTENSION_DIR))}`,
-  ];
+  const steps = (name: string) => addExtensionSteps(name).map((step, index) => `  ${index + 1}  ${step.replace(/`([^`]+)`/g, (_, code: string) => accent(code))}`);
   if (current === HEADLESS) {
-    console.log(bold("To also use your own browsers, load the extension once in each"));
+    console.log(bold("To also use your own browsers, add the extension once in each"));
     console.log(steps("chrome").join("\n"));
-    console.log(`     ${dim("In Arc use arc://extensions, in Dia dia://extensions")}`);
+    if (RUNS_FROM_CHECKOUT) console.log(`     ${dim("In Arc use arc://extensions, in Dia dia://extensions")}`);
   } else {
     const connected = (await daemonStatus())?.browsers.find((item) => item.name === current);
     let result: ConnectResult | undefined = connected;
     if (!connected) {
-      console.log(bold(`Load the extension in ${browserLabel(current)}, once`));
+      console.log(bold(`Add the extension to ${browserLabel(current)}, once`));
       console.log(steps(current).join("\n"));
+      if (interactive && !RUNS_FROM_CHECKOUT && !flags.has("no-open") && (await openInBrowser(current, STORE_URL))) {
+        console.log(`     ${dim(`Opened the store page in ${browserLabel(current)}`)}`);
+      }
       console.log("");
       if (interactive && !flags.has("no-wait")) result = await waitForBrowser(current, port, style);
     }
-    if (result === "skipped") console.log(`${style.color && process.stdout.isTTY ? "" : "\n"}${dim(MARK.info)} Skipped. Run ${accent("apart doctor")} once the extension is loaded.`);
+    const advice = result && typeof result === "object" ? extensionAdvice(result) : null;
+    if (result === "skipped") console.log(`${style.color && process.stdout.isTTY ? "" : "\n"}${dim(MARK.info)} Skipped. Run ${accent("apart doctor")} once the extension is added.`);
     else if (result === "timeout") console.log(`${bad(bold(MARK.problem))} ${browserLabel(current)} did not connect in 5 minutes. Run ${accent("apart doctor")} to see why.`);
-    else if (result && VERSION !== "dev" && result.version !== VERSION) {
-      console.log(`${bad(bold(MARK.problem))} ${browserLabel(current)} runs extension ${result.version}, but apart is ${VERSION}`);
-      console.log(`  ${accent(MARK.next)} Reload apart in ${accent(extensionsPage(current))}`);
+    else if (result && advice) {
+      console.log(`${advice.status === "problem" ? bad(bold(MARK.problem)) : dim(MARK.info)} ${browserLabel(current)} runs ${advice.detail}`);
+      for (const fix of advice.fix) console.log(`  ${accent(MARK.next)} ${fix.replace(/`([^`]+)`/g, (_, code: string) => accent(code))}`);
     } else if (result) console.log(`${ok(bold(MARK.ok))} ${browserLabel(current)} connected ${dim(`· extension ${result.version}`)}`);
   }
 
@@ -776,7 +791,10 @@ async function main(): Promise<number> {
     case "setup":
       return commandSetup(flags);
     case "extension-path":
-      await syncExtension();
+      if (!RUNS_FROM_CHECKOUT) {
+        console.error(`apart's extension comes from the Chrome Web Store now: ${STORE_URL}`);
+        return 1;
+      }
       console.log(EXTENSION_DIR);
       return 0;
     case "home":

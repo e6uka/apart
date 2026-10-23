@@ -5,7 +5,11 @@
 
 Drive your real, signed-in Chrome from the terminal.
 
-`apart repl` runs a Playwright-style script against tabs it opens in **your own Chrome**, with your cookies and logged-in sessions, and prints what it saw. It is a plain command line tool: call it yourself, from a shell script, or from any coding agent that can run terminal commands (Claude Code, Codex, Cursor and others). Nothing else needs to be installed.
+[![npm](https://img.shields.io/npm/v/apart-browser)](https://www.npmjs.com/package/apart-browser) [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/aejkpibmfgojapfgoplgnokmblmacgpe?label=chrome%20web%20store)](https://chromewebstore.google.com/detail/apart/aejkpibmfgojapfgoplgnokmblmacgpe)
+
+> **Installed the extension from the Chrome Web Store?** It needs the `apart` command line tool to do anything. Install it with `npm install -g apart-browser`, then run `apart setup`. See [Install](#install).
+
+`apart repl` runs a Playwright-style script against tabs it opens in **your own Chrome**, with your cookies and logged-in sessions, and prints what it saw. It is a plain command line tool: call it yourself, from a shell script, or from any coding agent that can run terminal commands (Claude Code, Codex, Cursor and others). It has two parts, installed separately: the `apart` command from npm, and the [apart extension](https://chromewebstore.google.com/detail/apart/aejkpibmfgojapfgoplgnokmblmacgpe) from the Chrome Web Store.
 
 ```bash
 apart repl '
@@ -34,13 +38,13 @@ terminal ── apart repl ──▶ daemon (Node, ~/.apart/daemon.sock)
 - **Extension.** Dials the daemon, answers pings so Chrome keeps the service worker alive, and executes tab and `chrome.debugger` requests. Tabs it opens come to the front so you can watch, are grouped under "apart", and are closed when the script ends or the daemon goes away; Chrome then returns to the tab you were on.
 - **Reading pages.** `snapshot()` injects a small script into an isolated world that walks the DOM, computes ARIA roles and accessible names, and prints a tree with refs (`[ref=e12]`) for every interactive element. `snapshot().diff` shows what changed since the previous snapshot, ignoring ref renumbering.
 
-No browser fork, no remote debugging port and no cloud service are involved: everything runs on your machine, through an extension you load yourself.
+No browser fork, no remote debugging port and no cloud service are involved: everything runs on your machine, through an extension you add yourself.
 
 ### Your browsers, or headless
 
 Each run uses one browser:
 
-- **Your browsers** (`--browser chrome`, `--browser arc`, …): any Chromium-based browser you have loaded the extension into, such as Chrome, Arc, Dia, Brave or Edge, signed in as you. You can watch it work. Several can be connected at once.
+- **Your browsers** (`--browser chrome`, `--browser arc`, …): any Chromium-based browser you have added the extension to, such as Chrome, Arc, Dia, Brave or Edge, signed in as you. You can watch it work. Several can be connected at once.
 - **Headless** (`--headless`): a hidden Chrome the daemon starts itself, with its own signed-out profile in `~/.apart/headless-profile`. It needs no extension and works while your browsers are closed. The daemon talks to it over a pipe, not a network port, starts it on the first headless run and closes it after five idle minutes.
 
 The daemon names each connected browser after its app (`chrome`, `arc`, `dia`, `brave`, `edge`). To use two profiles of the same browser at once, give one its own name in that profile's extension Settings; otherwise the newest connection takes over. `apart daemon status` lists what is connected.
@@ -51,7 +55,7 @@ Safari is not supported: it gives extensions no way to control tabs, and its aut
 
 ### The extension
 
-The extension is not on the Chrome Web Store yet; it comes with the npm package and is loaded unpacked (see [Install](#install)). Until then it needs Developer mode left on, which some work computers block, and updates mean clicking reload after `npm install -g apart-browser@latest`. [docs/chrome-web-store.md](docs/chrome-web-store.md) has the submission and what changes once it is live.
+Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/apart/aejkpibmfgojapfgoplgnokmblmacgpe); it works in Chrome, Arc, Dia, Brave, Edge and other Chromium-based browsers, and the store keeps it up to date. On its own it does nothing: it needs the `apart` command line tool (`npm install -g apart-browser`).
 
 - **Toolbar popup.** Whether the terminal can reach Chrome right now, and the last three runs. When it is not connected, it shows the command to start apart, with a Copy button and a Check now button.
 - **Activity.** Every run with the pages it opened, which browser it used, how long it took and any error, searchable and filterable by result, browser, time and sort order. Headless runs made while Chrome was closed show up the next time the extension connects. Successful runs that open nothing (such as an agent's readiness check) are left out.
@@ -66,22 +70,32 @@ Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart
 
 ## Install
 
-```bash
-npm install -g apart-browser   # or: yarn global add apart-browser
-apart setup
-```
+1. Install the command line tool:
 
-The npm package is called `apart-browser`, and the command it installs is `apart`. `apart setup` asks which browser runs should use by default (pass `--browser <name>` to skip the question), shows how to load the extension in it, and waits until the browser connects (Ctrl+C skips the wait). The extension is not on the Chrome Web Store yet, so load it unpacked, once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`; in Dia, `dia://extensions`), turn on **Developer mode**, click **Load unpacked** and choose `~/.apart/extension` (`apart extension-path` prints it again). Then check everything with:
+   ```bash
+   npm install -g apart-browser   # or: yarn global add apart-browser
+   ```
 
-```bash
-apart doctor
-```
+2. Add the extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/apart/aejkpibmfgojapfgoplgnokmblmacgpe), once in each browser you want apart to use.
 
-apart keeps its copy of the extension in `~/.apart/extension`, so the folder stays put when npm or your Node version manager moves the package. After you update apart (`npm install -g apart-browser@latest`), the next run refreshes that copy; click the reload icon on apart in `chrome://extensions` and `apart doctor` stops reporting the old version.
+3. Choose your default browser and check everything:
+
+   ```bash
+   apart setup
+   apart doctor
+   ```
+
+The npm package is called `apart-browser`, and the command it installs is `apart`. `apart setup` asks which browser runs should use by default (pass `--browser <name>` to skip the question), opens the store page in that browser on macOS if the extension is not there yet (`--no-open` skips that), and waits until the browser connects (Ctrl+C skips the wait).
+
+The store updates the extension on its own, and a new version can take a few days to pass review, so for a while after a release the extension and the command line tool may be a version apart. `apart doctor` says which side to update: `npm install -g apart-browser@latest` when the extension is newer, or nothing when the store update is still on its way (**Update** in `chrome://extensions`, with Developer mode on, fetches it sooner).
+
+**Moving from the unpacked extension.** Earlier versions had you load the extension unpacked from `~/.apart/extension`. Add the store version, then remove the unpacked one in `chrome://extensions` and delete `~/.apart/extension`. The store copy is a different extension, so its own settings (a custom browser name or port) need setting again; run history carries over through `~/.apart/history.json`.
+
+**Without the store.** To test a local build, or in a browser that cannot reach the Chrome Web Store, work from a checkout (`./install.sh`), open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose the folder `apart extension-path` prints.
 
 `doctor` starts the daemon, checks the extension and the browser for headless runs, and tells you what, if anything, is missing. Chrome shows an "apart is debugging this browser" bar while a script runs; that is Chrome's standard notice for `chrome.debugger`.
 
-To uninstall: `apart daemon stop`, `npm uninstall -g apart-browser`, remove apart in `chrome://extensions`, then delete `~/.apart` (settings, run history and the extension copy) and `~/.local/bin/aside` if you made it.
+To uninstall: `apart daemon stop`, `npm uninstall -g apart-browser`, remove apart in `chrome://extensions`, then delete `~/.apart` (settings and run history) and `~/.local/bin/aside` if you made it.
 
 ## Using it from an agent
 
@@ -97,7 +111,7 @@ To read or act on a web page, use apart. Run `apart guide` first and follow it.
 
 Each run belongs to an agent. apart takes the name from `--agent <name>`, then the `APART_AGENT` environment variable, then the Claude Code session (each Claude Code session counts as its own agent). Inside Claude Code, an `--agent` name is scoped to the session (`claude-<session>:<name>`), so two sessions that both use `--agent research` stay apart. `APART_AGENT` is shared on purpose: every session with the same value is the same agent, so one session can hand its tabs to the next. Runs with none of these have no agent.
 
-Ownership needs the extension to match the CLI's version; `apart doctor` reports an extension that has not been reloaded since an update.
+Ownership needs the extension to match the CLI's version; `apart doctor` says which one to update.
 
 With `keep-tabs` on, a tab a run leaves open belongs to its agent. Other agents never reuse it in `openTab`, and `attachBrowserTab` and `attachActiveBrowserTab` refuse it with an error naming the owner, so two agents working on the same site each keep their own tab. `listBrowserTabs()` shows the owner as `agent`. Tabs left by runs with no agent are free for any run to use.
 
@@ -120,13 +134,13 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 | Command | What it does |
 | --- | --- |
 | `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--browser <name>` (or `--headless`, `--chrome`) to pick the browser for this run, `--agent <name>` to say which agent is running it (see [Tabs and agents](#tabs-and-agents)). Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
-| `apart setup` | Choose the default browser (`--browser <name>` skips the question), show how to load the extension and wait for the browser to connect (`--no-wait` skips that). `--gstack` also links `~/.local/bin/aside` for gstack. |
+| `apart setup` | Choose the default browser (`--browser <name>` skips the question), open the extension's store page in it if needed (`--no-open` skips that) and wait for the browser to connect (`--no-wait` skips that). `--gstack` also links `~/.local/bin/aside` for gstack. |
 | `apart guide` | Print the guide for coding agents: how to write scripts, the script globals, the tab rules and what to do when something fails, plus the agent name this shell's runs belong to. |
 | `apart config default-browser <name>` | Set the browser runs use without a flag. `apart config` shows the current settings. |
 | `apart config keep-tabs on\|off` | Leave tabs a script opened in your Chrome open when it ends, instead of closing them. Also in the extension's Settings. |
 | `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. `status --json` prints the status as JSON. |
 | `apart doctor` | Check Node, the install, the daemon, each connected browser and the browser for headless runs, and say how to fix each problem. `--json` prints the result as JSON; the exit code is 1 when something needs fixing. |
-| `apart extension-path` | Print the extension folder to load in your browser (`~/.apart/extension`). |
+| `apart extension-path` | In a checkout, print the built extension folder to load unpacked. Installed from npm, it points to the Chrome Web Store instead. |
 | `apart skills list` | Prints that no skills are installed (kept for gstack compatibility). |
 | `apart exec` | Not supported; apart has no autonomous agent. |
 

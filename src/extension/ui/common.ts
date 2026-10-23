@@ -149,8 +149,8 @@ const COPY: Record<ConnectionState, { tab: string; title: string; body: string }
   loading: { tab: "Checking", title: "Checking the connection", body: "One moment." },
   connected: { tab: "Connected", title: "Ready", body: "Your terminal can use this browser. Tabs apart opens go in the pink apart group." },
   running: { tab: "Working", title: "Running a script", body: "Tabs it opens appear in the pink apart group and close when it finishes." },
-  disconnected: { tab: "Offline", title: "Not connected", body: "Start apart in your terminal, then check again." },
-  rejected: { tab: "Refused", title: "Connection refused", body: "The daemon did not accept this extension. Reinstall apart from its repository so the two match, then check again." },
+  disconnected: { tab: "Offline", title: "Not connected", body: "This extension works with the apart command line tool. New here? Install it in your terminal and run setup. Already installed? Run doctor." },
+  rejected: { tab: "Refused", title: "Connection refused", body: "The daemon did not accept this extension. Update apart in your terminal so the two match, then check again." },
   replaced: { tab: "Elsewhere", title: "Connected in another profile", body: "Another profile of this browser took over the connection. Give each profile its own name below to use both, or check again to take it back here." },
 };
 
@@ -170,9 +170,11 @@ export function renderStatusCard(root: HTMLElement, state: ExtensionState, optio
     if (!options.compact) facts.push(`<dt>Extension</dt><dd>${escapeHtml(chrome.runtime.getManifest().version)}</dd>`);
     extra = `<dl class="status-facts">${facts.join("")}</dl>`;
   } else if (kind !== "loading") {
-    const command = port === 27170 ? "apart doctor" : `apart daemon start --port ${port}`;
+    const commands = kind === "rejected"
+      ? ["npm install -g apart-browser@latest && apart daemon restart"]
+      : ["npm install -g apart-browser && apart setup", port === 27170 ? "apart doctor" : `apart daemon start --port ${port}`];
     extra = `
-      <div class="command"><code>${escapeHtml(command)}</code><button class="button ghost" type="button" data-copy="${escapeHtml(command)}">${icon("copy")}<span>Copy</span></button></div>
+      ${commands.map((command) => `<div class="command"><code>${escapeHtml(command)}</code><button class="button ghost" type="button" data-copy="${escapeHtml(command)}">${icon("copy")}<span>Copy</span></button></div>`).join("")}
       <div class="status-actions"><button class="button primary" type="button" data-action="connect">${icon("refresh")}<span>Check now</span></button></div>
       <p class="status-hint" role="status" aria-live="polite">It keeps checking on its own.</p>`;
   }

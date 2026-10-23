@@ -2,7 +2,8 @@ export const PROTOCOL_VERSION = 1;
 export const DEFAULT_PORT = 27170;
 export const EXTENSION_ID = "omkiljjaphabkenjdljjaopfdfadjgab";
 export const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}`;
-export const STORE_EXTENSION_IDS: readonly string[] = [];
+export const STORE_EXTENSION_IDS: readonly string[] = ["aejkpibmfgojapfgoplgnokmblmacgpe"];
+export const STORE_URL = `https://chromewebstore.google.com/detail/apart/${STORE_EXTENSION_IDS[0]}`;
 
 const EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
 
@@ -176,7 +177,7 @@ export interface DaemonStatus {
   uptimeMs: number;
   extensionConnected: boolean;
   extensionVersion: string | null;
-  browsers: { name: string; version: string }[];
+  browsers: { name: string; version: string; store?: boolean }[];
   running: boolean;
   headlessRunning: boolean;
   defaultBrowser: RunBrowser;
