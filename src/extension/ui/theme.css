@@ -123,6 +123,7 @@ svg.icon { width: 16px; height: 16px; flex: none; display: block; }
 }
 .command code { flex: 1; min-width: 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; padding: 6px 0; }
 .command .button { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.command + .command { margin-top: 8px; }
 .status-hint { margin-top: 10px; font-size: 13px; color: var(--muted); min-height: 1.5em; }
 
 .result { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }

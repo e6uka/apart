@@ -10,7 +10,7 @@ import { runScript } from "./runner";
 import { browserLabel } from "../shared/browsers";
 import { isBrowser, isHeadless, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, HISTORY_PATH, LOG_DIR, PID_PATH, RUNS_DIR, SOCKET_DIR, SOCKET_PATH } from "../shared/paths";
-import { allowedExtensionOrigins, cleanAgent, cleanPid, type CliMessage, type CliRequest, type DaemonStatus, type ExtHello, type RunRecord } from "../shared/protocol";
+import { allowedExtensionOrigins, cleanAgent, STORE_URL, cleanPid, type CliMessage, type CliRequest, type DaemonStatus, type ExtHello, type RunRecord } from "../shared/protocol";
 
 const EXTENSION_WAIT_MS = 20000;
 const DEFAULT_SCRIPT_TIMEOUT_MS = 120000;
@@ -153,7 +153,7 @@ export async function runDaemon(options: { port: number; version: string }): Pro
         const others = bridge.browsers().map((item) => item.name);
         const hint = others.length
           ? ` Connected: ${others.join(", ")}. Run with --browser ${others[0]}, or make it the default with apart config default-browser ${others[0]}.`
-          : " Load the apart extension in it (`apart extension-path` prints its folder) and keep it open, or run with --headless.";
+          : ` Add the apart extension to it from the Chrome Web Store (${STORE_URL}) and keep it open, or run with --headless.`;
         write(socket, { type: "done", ok: false, error: `${browserLabel(browser)} is not connected.${hint}`, elapsedMs: 0, runDir });
         return;
       }

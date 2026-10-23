@@ -458,9 +458,10 @@ async function ensureAlarm(): Promise<void> {
   if (!existing) await chrome.alarms.create(ALARM_NAME, { periodInMinutes: 0.5 });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   void ensureAlarm();
   void connect();
+  if (details.reason === "install") void chrome.runtime.openOptionsPage();
 });
 chrome.runtime.onStartup.addListener(() => {
   void ensureAlarm();
