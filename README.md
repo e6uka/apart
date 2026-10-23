@@ -51,6 +51,8 @@ Safari is not supported: it gives extensions no way to control tabs, and its aut
 
 ### The extension
 
+The extension is not on the Chrome Web Store yet; it comes with the npm package and is loaded unpacked (see [Install](#install)). Until then it needs Developer mode left on, which some work computers block, and updates mean clicking reload after `npm install -g apart-browser@latest`. [docs/chrome-web-store.md](docs/chrome-web-store.md) has the submission and what changes once it is live.
+
 - **Toolbar popup.** Whether the terminal can reach Chrome right now, and the last three runs. When it is not connected, it shows the command to start apart, with a Copy button and a Check now button.
 - **Activity.** Every run with the pages it opened, which browser it used, how long it took and any error, searchable and filterable by result, browser, time and sort order. Headless runs made while Chrome was closed show up the next time the extension connects. Successful runs that open nothing (such as an agent's readiness check) are left out.
 - **Settings.** Connection details, the default browser, whether tabs stay open when a script ends, the daemon port, a setup checklist, and what apart keeps: the last 200 runs, with page addresses stripped of query strings and fragments, stored in this browser and in `~/.apart/history.json`. Clearing it there removes both.
@@ -69,7 +71,7 @@ npm install -g apart-browser   # or: yarn global add apart-browser
 apart setup
 ```
 
-The npm package is called `apart-browser`, and the command it installs is `apart`. `apart setup` asks which browser runs should use by default (pass `--browser <name>` to skip the question) and prints the folder to load the extension from. Load the extension once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`; in Dia, `dia://extensions`), turn on **Developer mode**, click **Load unpacked** and choose that folder (`apart extension-path` prints it again; it is `~/.apart/extension`). Finish with:
+The npm package is called `apart-browser`, and the command it installs is `apart`. `apart setup` asks which browser runs should use by default (pass `--browser <name>` to skip the question) and prints the folder to load the extension from. The extension is not on the Chrome Web Store yet, so load it unpacked, once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`; in Dia, `dia://extensions`), turn on **Developer mode**, click **Load unpacked** and choose that folder (`apart extension-path` prints it again; it is `~/.apart/extension`). Finish with:
 
 ```bash
 apart doctor
