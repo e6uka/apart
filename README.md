@@ -71,7 +71,7 @@ npm install -g apart-browser   # or: yarn global add apart-browser
 apart setup
 ```
 
-The npm package is called `apart-browser`, and the command it installs is `apart`. `apart setup` asks which browser runs should use by default (pass `--browser <name>` to skip the question) and prints the folder to load the extension from. The extension is not on the Chrome Web Store yet, so load it unpacked, once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`; in Dia, `dia://extensions`), turn on **Developer mode**, click **Load unpacked** and choose that folder (`apart extension-path` prints it again; it is `~/.apart/extension`). Finish with:
+The npm package is called `apart-browser`, and the command it installs is `apart`. `apart setup` asks which browser runs should use by default (pass `--browser <name>` to skip the question), shows how to load the extension in it, and waits until the browser connects (Ctrl+C skips the wait). The extension is not on the Chrome Web Store yet, so load it unpacked, once in each browser you want apart to use: open `chrome://extensions` (in Arc, `arc://extensions`; in Dia, `dia://extensions`), turn on **Developer mode**, click **Load unpacked** and choose `~/.apart/extension` (`apart extension-path` prints it again). Then check everything with:
 
 ```bash
 apart doctor
@@ -120,15 +120,17 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 | Command | What it does |
 | --- | --- |
 | `apart repl '<js>'` | Run a script. Also `--file script.js`, `--file -` (stdin), `--timeout <ms>` (default 120 s), `--browser <name>` (or `--headless`, `--chrome`) to pick the browser for this run, `--agent <name>` to say which agent is running it (see [Tabs and agents](#tabs-and-agents)). Exit code is always 0; the last line is `[ok 1.2s]` or `[error …]`. |
-| `apart setup` | Choose the default browser (`--browser <name>` skips the question) and print how to load the extension. `--gstack` also links `~/.local/bin/aside` for gstack. |
-| `apart guide` | Print the guide for coding agents: how to write scripts, the tab rules and what to do when something fails, plus the agent name this shell's runs belong to. |
+| `apart setup` | Choose the default browser (`--browser <name>` skips the question), show how to load the extension and wait for the browser to connect (`--no-wait` skips that). `--gstack` also links `~/.local/bin/aside` for gstack. |
+| `apart guide` | Print the guide for coding agents: how to write scripts, the script globals, the tab rules and what to do when something fails, plus the agent name this shell's runs belong to. |
 | `apart config default-browser <name>` | Set the browser runs use without a flag. `apart config` shows the current settings. |
 | `apart config keep-tabs on\|off` | Leave tabs a script opened in your Chrome open when it ends, instead of closing them. Also in the extension's Settings. |
-| `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. |
-| `apart doctor` | Check Node, the build, the shims, the daemon, the extension and the browser for headless runs. |
+| `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. `status --json` prints the status as JSON. |
+| `apart doctor` | Check Node, the install, the daemon, each connected browser and the browser for headless runs, and say how to fix each problem. `--json` prints the result as JSON; the exit code is 1 when something needs fixing. |
 | `apart extension-path` | Print the extension folder to load in your browser (`~/.apart/extension`). |
 | `apart skills list` | Prints that no skills are installed (kept for gstack compatibility). |
 | `apart exec` | Not supported; apart has no autonomous agent. |
+
+`setup`, `doctor`, `daemon status` and `--help` use colour in a terminal. Colour is off when the output is piped, when `NO_COLOR` is set or when `TERM=dumb`; `FORCE_COLOR=1` turns it on. `repl` output never changes shape: in a terminal only its last line is coloured, and piped it is plain text, as agents see it. The designs for these screens are in [design/cli](design/cli).
 
 Logs: `~/.apart/logs/daemon.log`. Run directories: `~/.apart/runs/<timestamp>/` (the last 50 are kept). Run history: `~/.apart/history.json`. Settings: `~/.apart/config.json`. Headless browser profile: `~/.apart/headless-profile/`. Set `APART_CHROME` to choose which Chrome or Chromium headless runs use.
 
