@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, openSync } from "node:fs";
+import readline from "node:readline/promises";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -16,7 +17,11 @@ declare const __APART_VERSION__: string;
 const VERSION = typeof __APART_VERSION__ === "string" ? __APART_VERSION__ : "dev";
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const DIST_DIR = path.dirname(SCRIPT_PATH);
-const EXTENSION_DIR = path.join(DIST_DIR, "extension");
+const BUNDLED_EXTENSION_DIR = path.join(DIST_DIR, "extension");
+const RUNS_FROM_CHECKOUT = existsSync(path.join(DIST_DIR, "..", ".git"));
+const EXTENSION_DIR = RUNS_FROM_CHECKOUT ? BUNDLED_EXTENSION_DIR : path.join(APART_HOME, "extension");
+const PACKAGE_NAME = "apart-browser";
+const GSTACK_LINK = path.join(os.homedir(), ".local", "bin", "aside");
 const DAEMON_START_TIMEOUT_MS = 8000;
 
 const HELP = `apart ${VERSION} — drive your real, signed-in Chrome from the terminal
@@ -24,6 +29,8 @@ const HELP = `apart ${VERSION} — drive your real, signed-in Chrome from the te
 Agents: run "apart guide" first. It explains the rules of using apart.
 
 Usage:
+  apart setup                      Choose the default browser and show how to load the extension
+                                   (--browser <name> skips the question, --gstack links ~/.local/bin/aside)
   apart guide                      How to use apart from a coding agent, and its rules
   apart repl '<javascript>'       Run a Playwright-style script against Chrome (exit code is always 0)
   apart repl --file script.js      Read the script from a file ("-" reads stdin)
@@ -38,7 +45,7 @@ Usage:
   apart config keep-tabs on|off    Leave tabs in your Chrome open when a script ends
   apart daemon start|stop|status   Manage the background daemon (started on demand by repl)
   apart doctor                     Check Node, the build, the daemon, the extension and the shims
-  apart extension-path             Print the unpacked extension directory to load in Chrome
+  apart extension-path             Print the extension folder to load in your browser
   apart skills list                Lists skills (apart ships none)
   apart exec '<task>'              Not supported: apart has no autonomous agent, use repl
 
@@ -142,7 +149,27 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function manifestVersion(dir: string): Promise<string | null> {
+  try {
+    return (JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8")) as { version?: string }).version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function syncExtension(): Promise<void> {
+  if (RUNS_FROM_CHECKOUT) return;
+  const bundled = await manifestVersion(BUNDLED_EXTENSION_DIR);
+  if (!bundled || bundled === (await manifestVersion(EXTENSION_DIR))) return;
+  const temp = `${EXTENSION_DIR}.${process.pid}.tmp`;
+  await fs.rm(temp, { recursive: true, force: true });
+  await fs.cp(BUNDLED_EXTENSION_DIR, temp, { recursive: true });
+  await fs.rm(EXTENSION_DIR, { recursive: true, force: true });
+  await fs.rename(temp, EXTENSION_DIR);
+}
+
 async function spawnDaemon(port: number): Promise<void> {
+  await syncExtension().catch(() => {});
   await fs.mkdir(LOG_DIR, { recursive: true });
   const logFile = openSync(path.join(LOG_DIR, "daemon.log"), "a");
   const child = spawn(process.execPath, [SCRIPT_PATH, "daemon", "run", "--port", String(port)], {
@@ -400,19 +427,17 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   };
   const major = Number(process.versions.node.split(".")[0]);
   check(major >= 22, `node ${process.versions.node}`, "install Node 22 or newer");
-  check(existsSync(path.join(DIST_DIR, "injected", "snapshot.js")) && existsSync(path.join(EXTENSION_DIR, "manifest.json")), `build at ${DIST_DIR}`, "run `yarn build`");
-  const binDir = path.join(os.homedir(), ".local", "bin");
+  check(existsSync(path.join(DIST_DIR, "injected", "snapshot.js")) && existsSync(path.join(BUNDLED_EXTENSION_DIR, "manifest.json")), `build at ${DIST_DIR}`, RUNS_FROM_CHECKOUT ? "run `yarn build`" : `reinstall apart: npm install -g ${PACKAGE_NAME}`);
+  await syncExtension().catch((error) => lines.push(`problem  could not copy the extension to ${EXTENSION_DIR}: ${error instanceof Error ? error.message : String(error)}`));
   const self = await fs.realpath(SCRIPT_PATH).catch(() => SCRIPT_PATH);
-  const apartLink = path.join(binDir, "apart");
-  check((await fs.realpath(apartLink).catch(() => null)) === self, `${apartLink} → this build`, "run ./install.sh");
-  const gstackLink = path.join(binDir, "aside");
-  const gstackTarget = await fs.realpath(gstackLink).catch(() => null);
-  if (gstackTarget === self) lines.push(`ok       ${gstackLink} → this build (gstack browser skills)`);
-  else if (gstackTarget === null) lines.push(`info     gstack link not installed (optional: ./install.sh --gstack)`);
-  else lines.push(`info     ${gstackLink} belongs to another program, so gstack will not use apart`);
-  if (!(process.env.PATH ?? "").split(path.delimiter).includes(binDir)) {
-    lines.push(`info     ${binDir} is not on PATH; call ${apartLink} directly or add the directory to PATH`);
-  }
+  const onPath = await findOnPath("apart");
+  if (onPath === null) check(false, "apart is on PATH", `install it with: npm install -g ${PACKAGE_NAME}  (or yarn global add ${PACKAGE_NAME})`);
+  else if ((await fs.realpath(onPath).catch(() => null)) === self) check(true, `${onPath} → this build`);
+  else lines.push(`info     ${onPath} is a different copy of apart than this one (${self})`);
+  const gstackTarget = await fs.realpath(GSTACK_LINK).catch(() => null);
+  if (gstackTarget === self) lines.push(`ok       ${GSTACK_LINK} → this build (gstack browser skills)`);
+  else if (gstackTarget === null) lines.push(`info     gstack link not installed (optional: apart setup --gstack)`);
+  else lines.push(`info     ${GSTACK_LINK} belongs to another program, so gstack will not use apart`);
   const chrome = ["/Applications/Google Chrome.app", "/Applications/Chromium.app", "/Applications/Google Chrome Canary.app"].find((app) => existsSync(app));
   check(Boolean(chrome) || process.platform !== "darwin", chrome ? `Chrome at ${chrome}` : "Chrome installed", "install Google Chrome or Chromium");
   const config = await readConfig();
@@ -433,7 +458,7 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   }
   if (status) {
     check(true, `daemon running (pid ${status.pid}, port ${status.port})`);
-    const loadExtension = `in Chrome or Arc open chrome://extensions, turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`;
+    const loadExtension = `open chrome://extensions (in Arc: arc://extensions, in Dia: dia://extensions), turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`;
     for (const item of status.browsers) {
       if (VERSION !== "dev" && item.version !== VERSION) {
         check(false, `${browserLabel(item.name)} runs extension ${item.version}, but apart is ${VERSION}`, `reload the extension in ${browserLabel(item.name)}: open chrome://extensions (in Arc: arc://extensions) and click the reload icon on apart. Until then it ignores which agent owns a tab.`);
@@ -449,6 +474,86 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
     ? "\nAll good. Try: apart repl 'const pg = await openTab(\"https://example.com\"); console.log(await pg.title()); await closeTab(pg);'\n\nTo let a coding agent use apart, add this line to your CLAUDE.md or AGENTS.md:\n  To read or act on a web page, use apart. Run `apart guide` first and follow it."
     : `\n${problems} problem${problems === 1 ? "" : "s"} found.`);
   return problems === 0 ? 0 : 1;
+}
+
+async function findOnPath(command: string): Promise<string | null> {
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, command);
+    try {
+      await fs.access(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+const MAC_APPS: [string, string][] = [
+  ["chrome", "/Applications/Google Chrome.app"],
+  ["arc", "/Applications/Arc.app"],
+  ["dia", "/Applications/Dia.app"],
+  ["brave", "/Applications/Brave Browser.app"],
+  ["edge", "/Applications/Microsoft Edge.app"],
+  ["vivaldi", "/Applications/Vivaldi.app"],
+  ["chromium", "/Applications/Chromium.app"],
+];
+
+async function askDefaultBrowser(): Promise<string> {
+  const found = process.platform === "darwin" ? MAC_APPS.filter(([, app]) => existsSync(app)).map(([name]) => name) : [];
+  const choices = [...(found.length ? found : ["chrome"]), HEADLESS];
+  console.log("Which browser should apart use by default?");
+  choices.forEach((name, index) => {
+    const detail = name === HEADLESS ? "a hidden Chrome apart starts itself, signed out" : "signed in as you, and you can watch it work (needs the extension)";
+    console.log(`  ${index + 1}. ${browserLabel(name)}: ${detail}`);
+  });
+  const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = Number((await prompt.question("Choose a number [1]: ")).trim() || "1");
+    return choices[Number.isInteger(answer) && answer >= 1 && answer <= choices.length ? answer - 1 : 0];
+  } finally {
+    prompt.close();
+  }
+}
+
+async function linkGstack(): Promise<string> {
+  const self = await fs.realpath(SCRIPT_PATH).catch(() => SCRIPT_PATH);
+  const current = await fs.readlink(GSTACK_LINK).catch(() => null);
+  const exists = current !== null || existsSync(GSTACK_LINK);
+  if (exists && !(current ?? "").endsWith(path.join("dist", "apart.js"))) {
+    return `skipped ${GSTACK_LINK}: a different program already uses that name (${current ?? "a regular file"})`;
+  }
+  await fs.mkdir(path.dirname(GSTACK_LINK), { recursive: true });
+  await fs.rm(GSTACK_LINK, { force: true });
+  await fs.symlink(self, GSTACK_LINK);
+  return `linked ${GSTACK_LINK} → ${self} (for gstack's browser skills)`;
+}
+
+async function commandSetup(flags: Map<string, string | true>): Promise<number> {
+  await syncExtension();
+  const config = await readConfig();
+  let browser = typeof flags.get("browser") === "string" ? (flags.get("browser") as string) : flags.has("headless") ? HEADLESS : undefined;
+  if (browser === undefined && !config.saved && process.stdin.isTTY) browser = await askDefaultBrowser();
+  if (browser !== undefined) {
+    if (!isBrowser(browser)) {
+      console.error("--browser must be a browser name such as chrome, arc, dia or headless");
+      return 2;
+    }
+    await writeConfig({ defaultBrowser: browser });
+    await notifyConfigChanged();
+  }
+  const current = browser ?? config.defaultBrowser;
+  console.log(`\nDefault browser: ${browserLabel(current)}. Change it any time in the extension's settings or with: apart config default-browser <name>`);
+  if (flags.has("gstack")) console.log(await linkGstack());
+  console.log(`
+${current === HEADLESS ? "To also use your own browsers (repl --browser <name>), load the extension once in each:" : "Load the extension once in each browser you want apart to use:"}
+  1. Open chrome://extensions (in Arc: arc://extensions, in Dia: dia://extensions) and turn on Developer mode
+  2. Click "Load unpacked" and choose: ${EXTENSION_DIR}
+
+Then check everything with:  apart doctor
+
+To let a coding agent use apart, add this line to your CLAUDE.md or AGENTS.md:
+  To read or act on a web page, use apart. Run \`apart guide\` first and follow it.`);
+  return 0;
 }
 
 async function main(): Promise<number> {
@@ -481,7 +586,10 @@ async function main(): Promise<number> {
     case "guide":
       console.log(guide());
       return 0;
+    case "setup":
+      return commandSetup(flags);
     case "extension-path":
+      await syncExtension();
       console.log(EXTENSION_DIR);
       return 0;
     case "home":

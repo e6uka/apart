@@ -153,7 +153,7 @@ export async function runDaemon(options: { port: number; version: string }): Pro
         const others = bridge.browsers().map((item) => item.name);
         const hint = others.length
           ? ` Connected: ${others.join(", ")}. Run with --browser ${others[0]}, or make it the default with apart config default-browser ${others[0]}.`
-          : " Load dist/extension in it and keep it open (`apart doctor` explains the steps), or run with --headless.";
+          : " Load the apart extension in it (`apart extension-path` prints its folder) and keep it open, or run with --headless.";
         write(socket, { type: "done", ok: false, error: `${browserLabel(browser)} is not connected.${hint}`, elapsedMs: 0, runDir });
         return;
       }
