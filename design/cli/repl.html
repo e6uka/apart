@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>apart repl output</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.t>div{white-space:pre;min-height:22px}
+</style>
+<div style="width: 820px; height: 320px; box-sizing: border-box; background: #1B1620; color: #F6EEF3; border: 1px solid #3A3040; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; font-family: 'JetBrains Mono', ui-monospace, monospace">
+  <div style="height: 40px; flex-shrink: 0; background: #241D2A; border-bottom: 1px solid #3A3040; display: flex; align-items: center; gap: 8px; padding: 0 16px">
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span style="flex-grow: 1; text-align: center; font-size: 12px; color: #B3A6B4; margin-right: 52px">zsh</span>
+  </div>
+  <div class="t" style="padding: 24px 28px; font-size: 13.5px; line-height: 22px">
+<div><span style="color: #B3A6B4">$</span> apart repl --file check.js</div>
+<div>Example Domain</div>
+<div><span style="color: #5CC79A">[ok 0.9s]</span></div>
+<div></div>
+<div><span style="color: #B3A6B4">$</span> apart repl --chrome --file check.js</div>
+<div><span style="color: #FF8A80">[error Chrome is not connected. Open it with the extension, or run with --headless.]</span></div>
+<div></div>
+<div><span style="color: #B3A6B4">$</span> apart repl --file check.js | cat      <span style="color: #B3A6B4"># what an agent sees</span></div>
+<div>Example Domain</div>
+<div>[ok 0.9s]</div>
+  </div>
+</div>
+</body>
+</html>

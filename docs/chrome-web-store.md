@@ -94,6 +94,48 @@ Then tick all three certifications: not sold to third parties, not used for purp
 
   > The extension does nothing on its own; it needs the open source apart command line tool. To test: install Node.js 22, run `npm install -g apart-browser && apart setup --browser chrome && apart doctor`, then `apart repl --chrome 'const pg = await openTab("https://example.com"); console.log(await pg.title()); await closeTab(pg);'`. A tab opens in a pink "apart" group, the title prints in the terminal, and the run appears in the extension's Activity page. To check the downloads permission: `apart repl --chrome 'const pg = await openTab("https://example.com"); await pg.evaluate(() => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["hello"])); a.download = "hello.txt"; a.id = "dl"; a.textContent = "Download"; document.body.append(a); }); const [d] = await Promise.all([pg.waitForEvent("download"), pg.click("#dl")]); console.log(await d.path()); await closeTab(pg);'`. Chrome saves hello.txt to the downloads folder and the terminal prints the copy in the run folder.
 
-## After the first upload
+## When the extension is live on the store
 
-The store gives the extension its own ID, different from the unpacked one (`omkiljjaphabkenjdljjaopfdfadjgab`). Add it to `STORE_EXTENSION_IDS` in `src/shared/protocol.ts` and release a new version of the command line tool, so the daemon accepts the store version. Until then, users of the store version can set `APART_EXTENSION_IDS=<store id>` before starting the daemon.
+The store gives the extension its own ID, different from the unpacked one (`omkiljjaphabkenjdljjaopfdfadjgab`), because the store package has no `key` in its manifest. Until the CLI knows that ID, the daemon refuses the store version; in the meantime its users can set `APART_EXTENSION_IDS=<store id>` before starting the daemon.
+
+Work through this list in order, on a feature branch.
+
+**Accept the store extension**
+
+- [ ] Copy the ID and listing URL from the developer dashboard.
+- [ ] Add the ID to `STORE_EXTENSION_IDS` in `src/shared/protocol.ts`.
+- [ ] Add a test to `test/extension-ids.test.ts` that `allowedExtensionIds("")` includes the store ID.
+
+**Point people to the store**
+
+- [ ] README "Install": make the store link step 2, right after `npm install -g apart-browser`. Move Developer mode and Load unpacked to a short "Without the store" note (for Chromium browsers without store access, or for testing a local build).
+- [ ] README "The extension": add the store link, and drop the line about the extension not being on the store yet.
+- [ ] `apart setup`, and the hint `apart doctor` gives when no browser is connected (`loadExtension` in `src/cli/main.ts`): show the store link first, and the unpacked folder second.
+- [ ] Daemon errors that say how to load the extension (`src/daemon/index.ts`, `src/daemon/bridge.ts`): mention the store.
+- [ ] Extension settings, "First-time setup" (`src/extension/options.html`): people reading it already have the extension, so make sure the steps start at `npm install -g apart-browser`.
+- [ ] Add the store link to the npm package description or README badge, so npmjs.com shows it.
+
+**Handle version drift**
+
+The store updates the extension on its own, and review can take days, so the extension and the CLI will not always match.
+
+- [ ] Change the out-of-date message in `apart doctor`. For a store install, "reload the extension" does nothing: when the CLI is newer, say the store update is on its way (or check for updates in `chrome://extensions`); when the extension is newer, say `npm install -g apart-browser@latest`.
+- [ ] Keep the CLI and the extension talking across one version of difference. Do not change `PROTOCOL_VERSION` in a way that breaks a store extension still waiting for review.
+- [ ] Release order from now on: submit the store package first, publish to npm once it is approved, unless the npm release works with the extension already on the store.
+
+**People moving from unpacked to store**
+
+- [ ] README: tell them to remove the unpacked copy in `chrome://extensions` after adding the store one. With both loaded in the same browser, both connect under the same name and the newest takes over.
+- [ ] Mention that the extension's own settings (custom browser name, port) do not carry over, because the store copy is a different extension. Run history does carry over through `~/.apart/history.json`.
+- [ ] Consider an `apart doctor` warning when the same browser connects twice, once with the unpacked ID and once with the store ID.
+
+**Release**
+
+- [ ] Bump the minor version in `package.json` and `src/extension/manifest.json`, in its own "Bump version" commit.
+- [ ] PR, merge, then `npm publish` from `main`.
+- [ ] Check a clean install: `npm install -g apart-browser`, add from the store, `apart setup`, `apart doctor`.
+
+**Every later release**
+
+- [ ] `yarn package:store` and upload `dist/store/apart-extension-<version>.zip` whenever extension code changes.
+- [ ] Update the store listing and screenshots in `design/store/` when the popup, Activity or Settings pages change.

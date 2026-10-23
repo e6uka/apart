@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>apart help</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.t>div{white-space:pre;min-height:22px}
+</style>
+<div style="width: 820px; height: 780px; box-sizing: border-box; background: #1B1620; color: #F6EEF3; border: 1px solid #3A3040; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; font-family: 'JetBrains Mono', ui-monospace, monospace">
+  <div style="height: 40px; flex-shrink: 0; background: #241D2A; border-bottom: 1px solid #3A3040; display: flex; align-items: center; gap: 8px; padding: 0 16px">
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span aria-hidden="true" style="width: 12px; height: 12px; border-radius: 6px; background: #3A3040"></span>
+    <span style="flex-grow: 1; text-align: center; font-size: 12px; color: #B3A6B4; margin-right: 52px">zsh</span>
+  </div>
+  <div class="t" style="padding: 24px 28px; font-size: 13.5px; line-height: 22px">
+<div><span style="color: #B3A6B4">$</span> apart --help</div>
+<div style="height: 22px"></div>
+<div><span style="color: #EE6AAA; font-weight: 700">apart</span> <span style="color: #B3A6B4">0.6.0</span></div>
+<div>Drive your signed-in browser from the terminal.</div>
+<div style="height: 22px"></div>
+<div><span style="color: #EE6AAA">→</span> Agents: run <span style="color: #EE6AAA">apart guide</span> first. It has the rules.</div>
+<div style="height: 22px"></div>
+<div style="font-weight: 700">Run scripts</div>
+<div>  <span style="color: #EE6AAA">apart repl '&lt;js&gt;'</span>          Run a Playwright-style script</div>
+<div>    --file &lt;path&gt;             <span style="color: #B3A6B4">Read the script from a file, - for stdin</span></div>
+<div>    --browser &lt;name&gt;          <span style="color: #B3A6B4">chrome, arc, dia, brave, edge or headless</span></div>
+<div>    --headless, --chrome      <span style="color: #B3A6B4">Shortcuts for --browser</span></div>
+<div>    --agent &lt;name&gt;            <span style="color: #B3A6B4">Who owns the tabs this run leaves open</span></div>
+<div>    --timeout &lt;ms&gt;            <span style="color: #B3A6B4">Default 120000, at most 600000</span></div>
+<div style="height: 22px"></div>
+<div style="font-weight: 700">Set up</div>
+<div>  <span style="color: #EE6AAA">apart setup</span>                Choose the default browser, load the extension</div>
+<div>  <span style="color: #EE6AAA">apart doctor</span>               Check everything and say what to fix</div>
+<div>  <span style="color: #EE6AAA">apart extension-path</span>       Print the extension folder</div>
+<div style="height: 22px"></div>
+<div style="font-weight: 700">Settings</div>
+<div>  <span style="color: #EE6AAA">apart config</span>               Show settings</div>
+<div>  <span style="color: #EE6AAA">apart config default-browser &lt;name&gt;</span></div>
+<div>  <span style="color: #EE6AAA">apart config keep-tabs on|off</span></div>
+<div style="height: 22px"></div>
+<div style="font-weight: 700">Daemon</div>
+<div>  <span style="color: #EE6AAA">apart daemon status|start|stop|restart</span></div>
+<div style="height: 22px"></div>
+<div style="font-weight: 700">More</div>
+<div>  <span style="color: #EE6AAA">apart guide</span>                How to use apart from a coding agent</div>
+<div>  <span style="color: #B3A6B4">Script API  github.com/e6uka/apart#script-api</span></div>
+  </div>
+</div>
+</body>
+</html>

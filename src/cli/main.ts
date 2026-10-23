@@ -10,7 +10,8 @@ import { findChrome } from "../daemon/headless";
 import { browserLabel, HEADLESS } from "../shared/browsers";
 import { isBrowser, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, LOG_DIR, SOCKET_PATH } from "../shared/paths";
-import { DEFAULT_PORT, allowedExtensionIds, cleanAgent, cleanPid, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
+import { createStyle, extensionsPage, formatUptime, MARK, tilde, type Style } from "./style";
+import { DEFAULT_PORT, cleanAgent, cleanPid, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
 
 declare const __APART_VERSION__: string;
 
@@ -24,42 +25,43 @@ const PACKAGE_NAME = "apart-browser";
 const GSTACK_LINK = path.join(os.homedir(), ".local", "bin", "aside");
 const DAEMON_START_TIMEOUT_MS = 8000;
 
-const HELP = `apart ${VERSION} — drive your real, signed-in Chrome from the terminal
-
-Agents: run "apart guide" first. It explains the rules of using apart.
-
-Usage:
-  apart setup                      Choose the default browser and show how to load the extension
-                                   (--browser <name> skips the question, --gstack links ~/.local/bin/aside)
-  apart guide                      How to use apart from a coding agent, and its rules
-  apart repl '<javascript>'       Run a Playwright-style script against Chrome (exit code is always 0)
-  apart repl --file script.js      Read the script from a file ("-" reads stdin)
-  apart repl ... --timeout <ms>    Script time budget (default 120000, max 600000)
-  apart repl ... --browser <name>  Use a connected browser (chrome, arc, ...) or headless for this run
-  apart repl ... --headless        Same as --browser headless: a hidden Chrome apart starts itself
-  apart repl ... --chrome          Same as --browser chrome
-  apart repl ... --agent <name>    Name the agent running this script; tabs it leaves open are its own
-                                   (default: $APART_AGENT, or the Claude Code session)
-  apart config default-browser <name>
-                                   Which one repl uses without a flag (also in the extension's settings)
-  apart config keep-tabs on|off    Leave tabs in your Chrome open when a script ends
-  apart daemon start|stop|status   Manage the background daemon (started on demand by repl)
-  apart doctor                     Check Node, the build, the daemon, the extension and the shims
-  apart extension-path             Print the extension folder to load in your browser
-  apart skills list                Lists skills (apart ships none)
-  apart exec '<task>'              Not supported: apart has no autonomous agent, use repl
-
-Script globals:
-  page, tabs, openTab(url, { newTab }), closeTab(page), listBrowserTabs(), attachBrowserTab(targetId),
-  attachActiveBrowserTab(), getTabByTargetId(id), snapshot(page, { interactive }) -> { tree, diff },
-  annotatedScreenshot(page) -> { base64Image }, page.screenshot({ path, type, quality, fullPage }),
-  page.pdf({ path, format }), page.locator(sel) / getByRole / getByLabel / getByText, page.evaluate(fn),
-  page.frameLocator(sel), page.frames(), page.setInputFiles(sel, files), page.on("dialog", fn),
-  page.waitForEvent("download") -> { path(), saveAs(p) }, page._sendToTarget(method, params),
-  fetch(url) (with the page's cookies), fs, path, pwd, Buffer, sleep(ms), console.log(...)
-
-Relative artifact paths resolve inside the per-run directory printed by console.log(pwd).
-Output ends with "[ok <seconds>s]" or "[error <message>]".`;
+function help(style: Style = createStyle()): string {
+  const { accent, bold, dim } = style;
+  const row = (command: string, text = "") => `  ${accent(command)}${text ? `${" ".repeat(Math.max(2, 27 - command.length))}${text}` : ""}`;
+  const option = (flag: string, text: string) => `    ${flag}${" ".repeat(Math.max(2, 25 - flag.length))}${dim(text)}`;
+  return [
+    `${accent(bold("apart"))} ${dim(VERSION)}`,
+    "Drive your signed-in browser from the terminal.",
+    "",
+    `${accent(MARK.next)} Agents: run ${accent("apart guide")} first. It has the rules.`,
+    "",
+    bold("Run scripts"),
+    row("apart repl '<js>'", "Run a Playwright-style script"),
+    option("--file <path>", "Read the script from a file, - for stdin"),
+    option("--browser <name>", "chrome, arc, dia, brave, edge or headless"),
+    option("--headless, --chrome", "Shortcuts for --browser"),
+    option("--agent <name>", "Who owns the tabs this run leaves open"),
+    option("--timeout <ms>", "Default 120000, at most 600000"),
+    "",
+    bold("Set up"),
+    row("apart setup", "Choose the default browser, load the extension"),
+    row("apart doctor", "Check everything and say what to fix"),
+    row("apart extension-path", "Print the extension folder"),
+    "",
+    bold("Settings"),
+    row("apart config", "Show settings"),
+    row("apart config default-browser <name>"),
+    row("apart config keep-tabs on|off"),
+    "",
+    bold("Daemon"),
+    row("apart daemon status|start|stop|restart"),
+    "",
+    bold("More"),
+    row("apart guide", "How to use apart from a coding agent"),
+    `  ${dim("Script API  https://github.com/e6uka/apart#script-api")}`,
+    `  ${dim("--json on doctor and daemon status prints JSON for scripts")}`,
+  ].join("\n");
+}
 
 const GUIDE = `apart guide — how to use apart from a coding agent
 
@@ -113,7 +115,17 @@ When something fails
   - A click that "would land on" something else means an overlay is in the way: take a
     new snapshot and deal with it, or click({ force: true }) if you are sure.
 
-Full API: apart --help, or https://github.com/e6uka/apart#script-api`;
+Script globals
+  page, tabs, openTab(url, { newTab }), closeTab(page), listBrowserTabs(), attachBrowserTab(targetId),
+  attachActiveBrowserTab(), getTabByTargetId(id), snapshot(page, { interactive }) -> { tree, diff },
+  annotatedScreenshot(page) -> { base64Image }, page.screenshot({ path, type, quality, fullPage }),
+  page.pdf({ path, format }), page.locator(sel) / getByRole / getByLabel / getByText, page.evaluate(fn),
+  page.frameLocator(sel), page.frames(), page.setInputFiles(sel, files), page.on("dialog", fn),
+  page.waitForEvent("download") -> { path(), saveAs(p) }, page._sendToTarget(method, params),
+  fetch(url) (with the page's cookies), fs, path, pwd, Buffer, sleep(ms), console.log(...)
+  Relative file paths resolve inside the run directory printed by console.log(pwd).
+
+Full API: https://github.com/e6uka/apart#script-api`;
 
 function guide(): string {
   const { agent } = detectAgent();
@@ -311,7 +323,8 @@ async function commandRepl(positional: string[], flags: Map<string, string | tru
   await talk(socket, { type: "run", code, timeoutMs, browser, ...(agent ? { agent } : {}), ...(agentPid ? { agentPid } : {}) }, (message) => {
     if (message.type === "out") process.stdout.write(`${message.text}\n`);
     else if (message.type === "done") {
-      process.stdout.write(message.ok ? `[ok ${(message.elapsedMs / 1000).toFixed(1)}s]\n` : `[error ${message.error}]\n`);
+      const style = createStyle();
+      process.stdout.write(message.ok ? `${style.ok(`[ok ${(message.elapsedMs / 1000).toFixed(1)}s]`)}\n` : `${style.bad(`[error ${message.error}]`)}\n`);
       return true;
     }
   });
@@ -328,12 +341,12 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
   if (action === "start") {
     const existing = await daemonStatus();
     if (existing) {
-      console.log(`daemon already running (pid ${existing.pid}, port ${existing.port})`);
+      console.log(`The daemon is already running (pid ${existing.pid}, port ${existing.port}).`);
       return 0;
     }
     await ensureDaemon(port);
     const status = await daemonStatus();
-    console.log(status ? `daemon started (pid ${status.pid}, port ${status.port})` : "daemon started");
+    console.log(status ? `The daemon started (pid ${status.pid}, port ${status.port}).` : "The daemon started.");
     return 0;
   }
   if (action === "stop") {
@@ -341,11 +354,11 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
     try {
       socket = await connectSocket();
     } catch {
-      console.log("daemon is not running");
+      console.log("The daemon is not running.");
       return 0;
     }
     await talk(socket, { type: "stop" }, (message) => message.type === "stopping");
-    console.log("daemon stopped");
+    console.log("The daemon stopped.");
     return 0;
   }
   if (action === "restart") {
@@ -354,16 +367,29 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
     return commandDaemon(["start"], flags);
   }
   const status = await daemonStatus();
+  if (flags.has("json")) {
+    console.log(JSON.stringify(status ? { cli: VERSION, ...status, type: undefined } : { cli: VERSION, running: false }, null, 2));
+    return status?.extensionConnected ? 0 : 1;
+  }
+  const style = createStyle();
+  const { bold, dim, ok, bad } = style;
+  const label = (text: string) => bold(text.padEnd(11));
   if (!status) {
-    console.log("daemon: not running");
+    console.log(`${bad(MARK.problem)} ${label("Daemon")}not running`);
+    console.log(`  ${style.accent(MARK.next)} It starts on the next run, or now with ${style.accent("apart daemon start")}`);
     return 1;
   }
-  const outdated = VERSION !== "dev" && status.version !== VERSION ? `; it runs ${status.version ?? "an older version"}, the next run restarts it as ${VERSION}` : "";
-  console.log(`daemon: running (${status.version ? `${status.version}, ` : ""}pid ${status.pid}, port ${status.port}, up ${Math.round(status.uptimeMs / 1000)}s${status.running ? ", script running" : ""}${outdated})`);
-  console.log(`browsers: ${status.browsers.length ? status.browsers.map((item) => `${item.name} (extension ${item.version})`).join(", ") : "none connected"}`);
-  console.log(`default browser: ${status.defaultBrowser}`);
-  console.log(`tabs at script end: ${status.keepTabs ? "left open" : "closed"}`);
-  console.log(`headless chrome: ${status.headlessRunning ? "running" : "not running (starts on the next --headless run)"}`);
+  const outdated = VERSION !== "dev" && status.version !== VERSION ? ` · restarts as ${VERSION} on the next run` : "";
+  const daemonDetail = dim(`${status.version ? `${status.version} · ` : ""}pid ${status.pid} · port ${status.port} · up ${formatUptime(status.uptimeMs)}${outdated}`);
+  const versions = Array.from(new Set(status.browsers.map((item) => item.version)));
+  const browsers = status.browsers.length === 0
+    ? dim("none connected")
+    : `${status.browsers.map((item) => item.name).join(", ")} ${dim(versions.length === 1 ? `· ${status.browsers.length > 1 ? "all on " : ""}extension ${versions[0]}` : `· ${status.browsers.map((item) => `${item.name} ${item.version}`).join(", ")}`)}`;
+  console.log(`${ok(MARK.ok)} ${label("Daemon")}${status.running ? "running a script" : "running"} ${daemonDetail}`);
+  console.log(`  ${label("Browsers")}${browsers}`);
+  console.log(`  ${label("Default")}${status.defaultBrowser}`);
+  console.log(`  ${label("Tabs")}${status.keepTabs ? "stay open when a script ends" : "close when a script ends"}`);
+  console.log(`  ${label("Headless")}${status.headlessRunning ? "running" : `idle ${dim("· starts on the next --headless run")}`}`);
   return status.extensionConnected ? 0 : 1;
 }
 
@@ -377,8 +403,8 @@ async function commandConfig(positional: string[]): Promise<number> {
   const [key, value] = positional;
   const config = await readConfig();
   if (!key) {
-    console.log(`default-browser ${config.defaultBrowser}${config.saved ? "" : " (not chosen yet; this is the default)"}`);
-    console.log(`keep-tabs ${config.keepTabs ? "on" : "off"}`);
+    console.log(`default-browser  ${config.defaultBrowser}${config.saved ? "" : " (not chosen yet; this is the default)"}`);
+    console.log(`keep-tabs        ${config.keepTabs ? "on" : "off"}`);
     return 0;
   }
   if (key === "default-browser") {
@@ -417,63 +443,155 @@ async function commandConfig(positional: string[]): Promise<number> {
   return 2;
 }
 
+type CheckStatus = "ok" | "problem" | "info";
+
+interface Check {
+  status: CheckStatus;
+  label: string;
+  detail?: string;
+  fix?: string[];
+}
+
+interface Section {
+  name: string;
+  note?: string;
+  checks: Check[];
+}
+
+function highlight(text: string, style: Style, base: (value: string) => string = (value) => value): string {
+  return text.split("`").map((part, index) => (index % 2 === 1 ? style.accent(part) : part ? base(part) : part)).join("");
+}
+
+function plain(text: string): string {
+  return text.replaceAll("`", "");
+}
+
+function renderSections(sections: Section[], style: Style): string {
+  const width = Math.max(10, ...sections.flatMap((section) => section.checks.map((check) => check.label.length))) + 2;
+  const marks: Record<CheckStatus, string> = {
+    ok: style.ok(style.bold(MARK.ok)),
+    problem: style.bad(style.bold(MARK.problem)),
+    info: style.dim(MARK.info),
+  };
+  const lines: string[] = [];
+  for (const section of sections) {
+    if (section.checks.length === 0) continue;
+    if (lines.length) lines.push("");
+    lines.push(section.note ? `${style.bold(section.name)}  ${style.dim(section.note)}` : style.bold(section.name));
+    for (const check of section.checks) {
+      const detail = check.detail ? highlight(check.detail, style, check.status === "problem" ? undefined : style.dim) : "";
+      lines.push(`${marks[check.status]} ${detail ? check.label.padEnd(width) : check.label}${detail}`);
+      for (const fix of check.fix ?? []) lines.push(`  ${style.accent(MARK.next)} ${highlight(fix, style)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function headlessName(executable: string): string {
+  const app = executable.match(/([^/]+)\.app\//)?.[1];
+  return app ?? tilde(executable);
+}
+
 async function commandDoctor(flags: Map<string, string | true>): Promise<number> {
   const port = Number(flags.get("port") ?? DEFAULT_PORT);
-  const lines: string[] = [];
-  let problems = 0;
-  const check = (ok: boolean, label: string, fix?: string) => {
-    lines.push(`${ok ? "ok      " : "problem "} ${label}${!ok && fix ? `\n         → ${fix}` : ""}`);
-    if (!ok) problems++;
-  };
-  const major = Number(process.versions.node.split(".")[0]);
-  check(major >= 22, `node ${process.versions.node}`, "install Node 22 or newer");
-  check(existsSync(path.join(DIST_DIR, "injected", "snapshot.js")) && existsSync(path.join(BUNDLED_EXTENSION_DIR, "manifest.json")), `build at ${DIST_DIR}`, RUNS_FROM_CHECKOUT ? "run `yarn build`" : `reinstall apart: npm install -g ${PACKAGE_NAME}`);
-  await syncExtension().catch((error) => lines.push(`problem  could not copy the extension to ${EXTENSION_DIR}: ${error instanceof Error ? error.message : String(error)}`));
-  const self = await fs.realpath(SCRIPT_PATH).catch(() => SCRIPT_PATH);
-  const onPath = await findOnPath("apart");
-  if (onPath === null) check(false, "apart is on PATH", `install it with: npm install -g ${PACKAGE_NAME}  (or yarn global add ${PACKAGE_NAME})`);
-  else if ((await fs.realpath(onPath).catch(() => null)) === self) check(true, `${onPath} → this build`);
-  else lines.push(`info     ${onPath} is a different copy of apart than this one (${self})`);
-  const gstackTarget = await fs.realpath(GSTACK_LINK).catch(() => null);
-  if (gstackTarget === self) lines.push(`ok       ${GSTACK_LINK} → this build (gstack browser skills)`);
-  else if (gstackTarget === null) lines.push(`info     gstack link not installed (optional: apart setup --gstack)`);
-  else lines.push(`info     ${GSTACK_LINK} belongs to another program, so gstack will not use apart`);
-  const chrome = ["/Applications/Google Chrome.app", "/Applications/Chromium.app", "/Applications/Google Chrome Canary.app"].find((app) => existsSync(app));
-  check(Boolean(chrome) || process.platform !== "darwin", chrome ? `Chrome at ${chrome}` : "Chrome installed", "install Google Chrome or Chromium");
+  const system: Section = { name: "System", checks: [] };
+  const daemon: Section = { name: "Daemon", checks: [] };
   const config = await readConfig();
-  lines.push(`info     default browser: ${config.defaultBrowser}${config.saved ? "" : " (not chosen yet)"}; change with apart config default-browser <name>`);
-  const headlessChrome = findChrome();
-  if (headlessChrome) lines.push(`ok       headless runs use ${headlessChrome} (profile ${HEADLESS_PROFILE_DIR})`);
-  else if (config.defaultBrowser === "headless") check(false, "Chrome for headless runs", "install Google Chrome or Chromium, or set APART_CHROME to its executable");
-  else lines.push(`info     no Chrome found for --headless runs; set APART_CHROME to a Chrome or Chromium executable`);
+  const browsers: Section = { name: "Browsers", note: `default: ${browserLabel(config.defaultBrowser)}${config.saved ? "" : " (not chosen yet)"}`, checks: [] };
+  const optional: Section = { name: "Optional", checks: [] };
+  const sections = [system, daemon, browsers, optional];
+
+  const major = Number(process.versions.node.split(".")[0]);
+  system.checks.push(major >= 22
+    ? { status: "ok", label: "Node", detail: process.versions.node }
+    : { status: "problem", label: "Node", detail: `${process.versions.node}, but apart needs 22 or newer`, fix: ["Install a newer Node from `https://nodejs.org`"] });
+
+  const self = await fs.realpath(SCRIPT_PATH).catch(() => SCRIPT_PATH);
+  const built = existsSync(path.join(DIST_DIR, "injected", "snapshot.js")) && existsSync(path.join(BUNDLED_EXTENSION_DIR, "manifest.json"));
+  const onPath = await findOnPath("apart");
+  const onPathSelf = onPath !== null && (await fs.realpath(onPath).catch(() => null)) === self;
+  if (!built) system.checks.push({ status: "problem", label: "apart", detail: `files missing in ${tilde(DIST_DIR)}`, fix: [RUNS_FROM_CHECKOUT ? "`yarn build`" : `\`npm install -g ${PACKAGE_NAME}\``] });
+  else if (onPath === null) system.checks.push({ status: "problem", label: "apart", detail: "not on PATH", fix: [`\`npm install -g ${PACKAGE_NAME}\`, or \`yarn global add ${PACKAGE_NAME}\``] });
+  else if (onPathSelf) system.checks.push({ status: "ok", label: "apart", detail: `${VERSION}  ${tilde(onPath)}` });
+  else system.checks.push({ status: "info", label: "apart", detail: `${VERSION} at ${tilde(self)}; another copy is first on PATH: ${tilde(onPath)}` });
+
+  try {
+    await syncExtension();
+    system.checks.push({ status: "ok", label: "Extension", detail: tilde(EXTENSION_DIR) });
+  } catch (error) {
+    system.checks.push({ status: "problem", label: "Extension", detail: `could not copy it to ${tilde(EXTENSION_DIR)}: ${error instanceof Error ? error.message : String(error)}` });
+  }
+
   let status = await daemonStatus();
   if (!status) {
     try {
-      await ensureDaemon(port);
+      (await ensureDaemon(port)).destroy();
       status = await daemonStatus();
     } catch (error) {
-      lines.push(`problem  daemon could not start: ${error instanceof Error ? error.message : String(error)}`);
-      problems++;
+      daemon.checks.push({ status: "problem", label: "Daemon", detail: `could not start: ${error instanceof Error ? error.message : String(error)}`, fix: [`See \`${tilde(path.join(LOG_DIR, "daemon.log"))}\``] });
     }
   }
   if (status) {
-    check(true, `daemon running (pid ${status.pid}, port ${status.port})`);
-    const loadExtension = `open chrome://extensions (in Arc: arc://extensions, in Dia: dia://extensions), turn on Developer mode, click "Load unpacked" and choose:\n           ${EXTENSION_DIR}\n           (accepted extension ids: ${allowedExtensionIds().join(", ")}); it connects within a few seconds`;
+    daemon.checks.push({ status: "ok", label: "Running", detail: `port ${status.port} · pid ${status.pid} · up ${formatUptime(status.uptimeMs)}` });
+    const loadSteps = (browser: string) => [
+      `Open \`${extensionsPage(browser)}\` and turn on Developer mode`,
+      `Click Load unpacked and choose \`${tilde(EXTENSION_DIR)}\``,
+    ];
     for (const item of status.browsers) {
       if (VERSION !== "dev" && item.version !== VERSION) {
-        check(false, `${browserLabel(item.name)} runs extension ${item.version}, but apart is ${VERSION}`, `reload the extension in ${browserLabel(item.name)}: open chrome://extensions (in Arc: arc://extensions) and click the reload icon on apart. Until then it ignores which agent owns a tab.`);
-      } else lines.push(`ok       ${browserLabel(item.name)} connected as "${item.name}" (extension ${item.version})`);
+        browsers.checks.push({ status: "problem", label: browserLabel(item.name), detail: `extension ${item.version}, but apart is ${VERSION}`, fix: [`Reload apart in \`${extensionsPage(item.name)}\``] });
+      } else browsers.checks.push({ status: "ok", label: browserLabel(item.name), detail: `extension ${item.version}` });
     }
     const defaultConnected = config.defaultBrowser === HEADLESS || status.browsers.some((item) => item.name === config.defaultBrowser);
-    if (status.browsers.length === 0 && config.defaultBrowser === HEADLESS) lines.push(`info     no browser connected; only needed for --browser runs\n         → ${loadExtension}`);
-    else if (status.browsers.length === 0) check(false, "no browser connected", loadExtension);
-    else if (!defaultConnected) check(false, `the default browser, ${config.defaultBrowser}, is not connected`, `open it with the extension loaded, or pick a connected one: apart config default-browser ${status.browsers[0].name}`);
+    if (status.browsers.length === 0 && config.defaultBrowser === HEADLESS) {
+      browsers.checks.push({ status: "info", label: "Your browsers", detail: "none connected; only needed for --browser runs", fix: loadSteps("chrome") });
+    } else if (!defaultConnected) {
+      browsers.checks.push({
+        status: "problem",
+        label: browserLabel(config.defaultBrowser),
+        detail: "not connected",
+        fix: status.browsers.length === 0
+          ? [...loadSteps(config.defaultBrowser), "Keep it open; it connects within a few seconds"]
+          : [`Open it with the extension loaded, or use a connected one: \`apart config default-browser ${status.browsers[0].name}\``],
+      });
+    }
   }
-  console.log(lines.join("\n"));
-  console.log(problems === 0
-    ? "\nAll good. Try: apart repl 'const pg = await openTab(\"https://example.com\"); console.log(await pg.title()); await closeTab(pg);'\n\nTo let a coding agent use apart, add this line to your CLAUDE.md or AGENTS.md:\n  To read or act on a web page, use apart. Run `apart guide` first and follow it."
-    : `\n${problems} problem${problems === 1 ? "" : "s"} found.`);
+  const headlessChrome = findChrome();
+  const findChromeFix = ["Install Google Chrome or Chromium, or set `APART_CHROME` to its path"];
+  if (headlessChrome) browsers.checks.push({ status: "ok", label: "Headless", detail: `${headlessName(headlessChrome)}, profile ${tilde(HEADLESS_PROFILE_DIR)}` });
+  else browsers.checks.push({ status: config.defaultBrowser === HEADLESS ? "problem" : "info", label: "Headless", detail: "no Chrome found", fix: findChromeFix });
+
+  const gstackTarget = await fs.realpath(GSTACK_LINK).catch(() => null);
+  if (gstackTarget === self) optional.checks.push({ status: "ok", label: "gstack", detail: `linked at ${tilde(GSTACK_LINK)}` });
+  else if (gstackTarget === null) optional.checks.push({ status: "info", label: "gstack", detail: "not linked   `apart setup --gstack`" });
+  else optional.checks.push({ status: "info", label: "gstack", detail: `${tilde(GSTACK_LINK)} belongs to another program` });
+
+  const problems = sections.reduce((sum, section) => sum + section.checks.filter((check) => check.status === "problem").length, 0);
+  if (flags.has("json")) {
+    const clean = sections.map((section) => ({
+      name: section.name,
+      ...(section.note ? { note: section.note } : {}),
+      checks: section.checks.map((check) => ({ ...check, ...(check.detail ? { detail: plain(check.detail) } : {}), ...(check.fix ? { fix: check.fix.map(plain) } : {}) })),
+    }));
+    console.log(JSON.stringify({ version: VERSION, ok: problems === 0, problems, sections: clean }, null, 2));
+    return problems === 0 ? 0 : 1;
+  }
+  const style = createStyle();
+  console.log(renderSections(sections, style));
+  console.log("");
+  if (problems === 0) {
+    console.log(`${style.ok(style.bold(`${MARK.ok} All good.`))} Try:`);
+    console.log(`  ${style.accent(`apart repl 'const pg = await openTab("https://example.com"); console.log(await pg.title()); await closeTab(pg);'`)}`);
+    console.log("");
+    console.log(agentHint(style));
+  } else {
+    console.log(`${style.bad(style.bold(`${problems} problem${problems === 1 ? "" : "s"}.`))} Fix ${problems === 1 ? "it" : "them"}, then run ${style.accent("apart doctor")} again.`);
+  }
   return problems === 0 ? 0 : 1;
+}
+
+function agentHint(style: Style): string {
+  return `${style.accent(MARK.next)} To let a coding agent use apart, add this to CLAUDE.md or AGENTS.md:\n  To read or act on a web page, use apart. Run \`apart guide\` first and follow it.`;
 }
 
 async function findOnPath(command: string): Promise<string | null> {
@@ -498,20 +616,57 @@ const MAC_APPS: [string, string][] = [
   ["chromium", "/Applications/Chromium.app"],
 ];
 
-async function askDefaultBrowser(): Promise<string> {
+async function askDefaultBrowser(style: Style, current: string | undefined): Promise<string> {
   const found = process.platform === "darwin" ? MAC_APPS.filter(([, app]) => existsSync(app)).map(([name]) => name) : [];
   const choices = [...(found.length ? found : ["chrome"]), HEADLESS];
-  console.log("Which browser should apart use by default?");
+  if (current && !choices.includes(current)) choices.unshift(current);
+  const preferred = Math.max(0, choices.indexOf(current ?? choices[0]));
+  const width = Math.max(...choices.map((name) => browserLabel(name).length)) + 3;
+  console.log(style.bold("Which browser should runs use by default?"));
+  console.log("");
   choices.forEach((name, index) => {
-    const detail = name === HEADLESS ? "a hidden Chrome apart starts itself, signed out" : "signed in as you, and you can watch it work (needs the extension)";
-    console.log(`  ${index + 1}. ${browserLabel(name)}: ${detail}`);
+    const detail = name === HEADLESS ? "hidden and signed out, no extension needed" : "signed in as you, and you can watch it work";
+    const entry = `${index + 1}  ${browserLabel(name).padEnd(width)}`;
+    console.log(index === preferred ? `${style.accent(`❯ ${entry}`)}${style.dim(detail)}` : `  ${entry}${style.dim(detail)}`);
   });
+  console.log("");
   const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = Number((await prompt.question("Choose a number [1]: ")).trim() || "1");
-    return choices[Number.isInteger(answer) && answer >= 1 && answer <= choices.length ? answer - 1 : 0];
+    const answer = Number((await prompt.question(`Choose 1-${choices.length} ${style.dim(`[${preferred + 1}]`)}: `)).trim() || String(preferred + 1));
+    return choices[Number.isInteger(answer) && answer >= 1 && answer <= choices.length ? answer - 1 : preferred];
   } finally {
     prompt.close();
+  }
+}
+
+type ConnectResult = { name: string; version: string } | "skipped" | "timeout";
+
+async function waitForBrowser(browser: string, port: number, style: Style): Promise<ConnectResult> {
+  (await ensureDaemon(port)).destroy();
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  const animate = style.color && Boolean(process.stdout.isTTY);
+  const message = `Waiting for ${browserLabel(browser)} to connect  ${style.dim("Ctrl+C to skip")}`;
+  if (!animate) console.log(message);
+  let skipped = false;
+  const onInterrupt = () => {
+    skipped = true;
+  };
+  process.on("SIGINT", onInterrupt);
+  const deadline = Date.now() + 5 * 60_000;
+  let frame = 0;
+  try {
+    while (!skipped && Date.now() < deadline) {
+      const found = (await daemonStatus())?.browsers.find((item) => item.name === browser);
+      if (found) return found;
+      for (let tick = 0; tick < 10 && !skipped; tick++) {
+        if (animate) process.stdout.write(`\r${style.accent(frames[frame++ % frames.length])} ${message}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    return skipped ? "skipped" : "timeout";
+  } finally {
+    process.off("SIGINT", onInterrupt);
+    if (animate) process.stdout.write("\r\x1b[2K");
   }
 }
 
@@ -529,10 +684,14 @@ async function linkGstack(): Promise<string> {
 }
 
 async function commandSetup(flags: Map<string, string | true>): Promise<number> {
+  const style = createStyle();
+  const { accent, bold, dim, ok, bad } = style;
+  const port = Number(flags.get("port") ?? DEFAULT_PORT);
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   await syncExtension();
   const config = await readConfig();
   let browser = typeof flags.get("browser") === "string" ? (flags.get("browser") as string) : flags.has("headless") ? HEADLESS : undefined;
-  if (browser === undefined && !config.saved && process.stdin.isTTY) browser = await askDefaultBrowser();
+  if (browser === undefined && interactive) browser = await askDefaultBrowser(style, config.saved ? config.defaultBrowser : undefined);
   if (browser !== undefined) {
     if (!isBrowser(browser)) {
       console.error("--browser must be a browser name such as chrome, arc, dia or headless");
@@ -542,17 +701,45 @@ async function commandSetup(flags: Map<string, string | true>): Promise<number> 
     await notifyConfigChanged();
   }
   const current = browser ?? config.defaultBrowser;
-  console.log(`\nDefault browser: ${browserLabel(current)}. Change it any time in the extension's settings or with: apart config default-browser <name>`);
-  if (flags.has("gstack")) console.log(await linkGstack());
-  console.log(`
-${current === HEADLESS ? "To also use your own browsers (repl --browser <name>), load the extension once in each:" : "Load the extension once in each browser you want apart to use:"}
-  1. Open chrome://extensions (in Arc: arc://extensions, in Dia: dia://extensions) and turn on Developer mode
-  2. Click "Load unpacked" and choose: ${EXTENSION_DIR}
+  if (interactive && browser !== undefined) console.log("");
+  console.log(`${ok(bold(MARK.ok))} Default browser: ${browserLabel(current)}`);
+  if (flags.has("gstack")) {
+    const result = await linkGstack();
+    console.log(result.startsWith("linked") ? `${ok(bold(MARK.ok))} ${result}` : `${dim(MARK.info)} ${result}`);
+  }
+  console.log("");
 
-Then check everything with:  apart doctor
+  const steps = (name: string) => [
+    `  1  Open ${accent(extensionsPage(name))} and turn on Developer mode`,
+    `  2  Click Load unpacked and choose ${accent(tilde(EXTENSION_DIR))}`,
+  ];
+  if (current === HEADLESS) {
+    console.log(bold("To also use your own browsers, load the extension once in each"));
+    console.log(steps("chrome").join("\n"));
+    console.log(`     ${dim("In Arc use arc://extensions, in Dia dia://extensions")}`);
+  } else {
+    const connected = (await daemonStatus())?.browsers.find((item) => item.name === current);
+    let result: ConnectResult | undefined = connected;
+    if (!connected) {
+      console.log(bold(`Load the extension in ${browserLabel(current)}, once`));
+      console.log(steps(current).join("\n"));
+      console.log("");
+      if (interactive && !flags.has("no-wait")) result = await waitForBrowser(current, port, style);
+    }
+    if (result === "skipped") console.log(`${style.color && process.stdout.isTTY ? "" : "\n"}${dim(MARK.info)} Skipped. Run ${accent("apart doctor")} once the extension is loaded.`);
+    else if (result === "timeout") console.log(`${bad(bold(MARK.problem))} ${browserLabel(current)} did not connect in 5 minutes. Run ${accent("apart doctor")} to see why.`);
+    else if (result && VERSION !== "dev" && result.version !== VERSION) {
+      console.log(`${bad(bold(MARK.problem))} ${browserLabel(current)} runs extension ${result.version}, but apart is ${VERSION}`);
+      console.log(`  ${accent(MARK.next)} Reload apart in ${accent(extensionsPage(current))}`);
+    } else if (result) console.log(`${ok(bold(MARK.ok))} ${browserLabel(current)} connected ${dim(`· extension ${result.version}`)}`);
+  }
 
-To let a coding agent use apart, add this line to your CLAUDE.md or AGENTS.md:
-  To read or act on a web page, use apart. Run \`apart guide\` first and follow it.`);
+  console.log("");
+  console.log(bold("Next"));
+  console.log(`  ${accent("apart doctor")}            ${dim("Check everything")}`);
+  if (!flags.has("gstack")) console.log(`  ${accent("apart setup --gstack")}    ${dim("Let gstack's /browse and /scrape use apart")}`);
+  console.log("");
+  console.log(agentHint(style));
   return 0;
 }
 
@@ -564,7 +751,7 @@ async function main(): Promise<number> {
     return 0;
   }
   if (!command || command === "help" || flags.has("help")) {
-    console.log(HELP);
+    console.log(help());
     return 0;
   }
   switch (command) {
@@ -596,7 +783,7 @@ async function main(): Promise<number> {
       console.log(APART_HOME);
       return 0;
     default:
-      console.error(`Unknown command: ${command}\n\n${HELP}`);
+      console.error(`Unknown command: ${command}. Run apart --help to see the commands.`);
       return 2;
   }
 }
