@@ -1,6 +1,6 @@
 # Chrome Web Store submission
 
-Everything the developer dashboard asks for, ready to paste. Upload `dist/store/apart-extension-<version>.zip`, built with `yarn package:store`.
+Everything the developer dashboard asks for, ready to paste. The store shows the description as plain text, so it uses no Markdown. Upload `dist/store/apart-extension-<version>.zip`, built with `yarn package:store`.
 
 ## Store listing
 
@@ -8,7 +8,7 @@ Everything the developer dashboard asks for, ready to paste. Upload `dist/store/
 
 **Summary (132 characters max):**
 
-> Lets the apart command line tool open and use tabs in your own signed-in Chrome, so your scripts and terminal agents can browse.
+> Use your signed-in Chrome from terminal scripts and agents. Needs the apart CLI: npm install -g apart-browser, then apart setup.
 
 **Category:** Developer Tools
 
@@ -16,14 +16,17 @@ Everything the developer dashboard asks for, ready to paste. Upload `dist/store/
 
 **Description:**
 
-> This extension needs the free, open source apart command line tool. After adding it, open a terminal and run:
+> Before you start: this extension needs the free, open source apart command line tool, and does nothing without it. After adding the extension, open a terminal and run:
 >
-> npm install -g apart-browser
-> apart setup
+> 1. npm install -g apart-browser
+> 2. apart setup
+> 3. apart doctor
+>
+> You need Node.js 22 or newer (https://nodejs.org) and macOS or Linux. apart setup picks your default browser and connects it; apart doctor checks everything and says what to fix.
 >
 > apart lets scripts and coding agents in your terminal use your real Chrome: the one you are already signed in to.
 >
-> Once the command line tool is installed, you run a Playwright-style script with `apart repl`. This extension receives those commands from apart on your computer, opens tabs in a pink "apart" tab group, works in them and reports back: what the page says, what changed, screenshots and PDFs. Scripts can fill forms, reach inside embedded frames, answer dialogs, upload files and save downloads. When the script ends, its tabs close.
+> Once the command line tool is installed, you run a Playwright-style script with apart repl. This extension receives those commands from apart on your computer, opens tabs in a pink "apart" tab group, works in them and reports back: what the page says, what changed, screenshots and PDFs. Scripts can fill forms, reach inside embedded frames, answer dialogs, upload files and save downloads. When the script ends, its tabs close.
 >
 > apart can also run scripts in a hidden headless Chrome of its own. You choose which one runs by default, and every run from both shows up in this extension's activity log.
 >
@@ -40,7 +43,7 @@ Everything the developer dashboard asks for, ready to paste. Upload `dist/store/
 >
 > Chrome shows "apart started debugging this browser" while a script runs. That is Chrome's standard notice for extensions that use the debugger.
 >
-> Requires the apart command line tool: https://github.com/e6uka/apart
+> Install guide and script reference: https://github.com/e6uka/apart
 
 **Graphics** (all in `design/store/`):
 
