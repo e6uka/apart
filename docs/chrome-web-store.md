@@ -26,7 +26,7 @@ Everything the developer dashboard asks for, ready to paste. The store shows the
 >
 > apart lets scripts and coding agents in your terminal use your real Chrome: the one you are already signed in to.
 >
-> Once the command line tool is installed, you run a Playwright-style script with apart repl. This extension receives those commands from apart on your computer, opens tabs in a pink "apart" tab group, works in them and reports back: what the page says, what changed, screenshots and PDFs. Scripts can fill forms, reach inside embedded frames, answer dialogs, upload files and save downloads. When the script ends, its tabs close.
+> Once the command line tool is installed, you run a Playwright-style script with apart repl. This extension receives those commands from apart on your computer, opens tabs in a pink "apart" tab group, works in them and reports back: what the page says, what changed, screenshots and PDFs. Scripts can fill forms, reach inside embedded frames, answer dialogs, upload files and save downloads. When the script ends, its tabs stay open for the next run to reuse, or close if you turn that off in Settings.
 >
 > apart can also run scripts in a hidden headless Chrome of its own. You choose which one runs by default, and every run from both shows up in this extension's activity log.
 >

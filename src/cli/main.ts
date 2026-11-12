@@ -78,8 +78,8 @@ Every run
       console.log((await snapshot(pg, { interactive: true })).tree);
       await pg.locator("e12").click();
       await closeTab(pg);
-  - Closes its tabs when it ends, unless the user turned keep-tabs on (headless tabs
-    always close).
+  - Leaves its tabs open when it ends, so the next run reuses them, unless the user
+    turned keep-tabs off (headless tabs always close).
   - Has a 120 s budget by default (--timeout <ms>, up to 600000).
   - Writes files only inside its run directory (console.log(pwd) prints it).
 
