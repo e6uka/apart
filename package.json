@@ -1,6 +1,6 @@
 {
   "name": "apart-browser",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Drive your real, signed-in Chrome from the terminal with Playwright-style scripts",
   "license": "MIT",
   "type": "module",
