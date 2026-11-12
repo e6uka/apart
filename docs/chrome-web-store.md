@@ -26,7 +26,7 @@ Everything the developer dashboard asks for, ready to paste. The store shows the
 >
 > apart lets scripts and coding agents in your terminal use your real Chrome: the one you are already signed in to.
 >
-> Once the command line tool is installed, you run a Playwright-style script with apart repl. This extension receives those commands from apart on your computer, opens tabs in a pink "apart" tab group, works in them and reports back: what the page says, what changed, screenshots and PDFs. Scripts can fill forms, reach inside embedded frames, answer dialogs, upload files and save downloads. When the script ends, its tabs close.
+> Once the command line tool is installed, you run a Playwright-style script with apart repl. This extension receives those commands from apart on your computer, opens tabs in a pink "apart" tab group, works in them and reports back: what the page says, what changed, screenshots and PDFs. Scripts can fill forms, reach inside embedded frames, answer dialogs, upload files and save downloads. When the script ends, its tabs stay open for the next run to reuse, or close if you turn that off in Settings.
 >
 > apart can also run scripts in a hidden headless Chrome of its own. You choose which one runs by default, and every run from both shows up in this extension's activity log.
 >
@@ -106,10 +106,47 @@ Then tick all three certifications: not sold to third parties, not used for purp
 
 The extension is live at https://chromewebstore.google.com/detail/apart/aejkpibmfgojapfgoplgnokmblmacgpe (ID `aejkpibmfgojapfgoplgnokmblmacgpe`, in `STORE_EXTENSION_IDS` in `src/shared/protocol.ts`). The npm package no longer ships the extension; `apart setup` and `apart doctor` point to the store, and only a source checkout offers Load unpacked.
 
-The store updates the extension on its own and review can take days, so the extension and the CLI will not always match. `apart doctor` treats a store extension that is behind the CLI as "update on its way", and one ahead of the CLI as "run `npm install -g apart-browser@latest`". Keep the CLI and the extension talking across one version of difference: do not change `PROTOCOL_VERSION` in a way that breaks a store extension still waiting for review.
+The store updates the extension on its own and review can take days, so the extension and the CLI will not always match. `apart doctor` treats a store extension that is behind the CLI as "update on its way", and one ahead of the CLI as "run `apart update`". Keep the CLI and the extension talking across one version of difference: do not change `PROTOCOL_VERSION` in a way that breaks a store extension still waiting for review.
 
 **Every release**
 
 - [ ] Bump the version in `package.json` and `src/extension/manifest.json` together, in its own "Bump version" commit.
-- [ ] When extension code changed: `yarn package:store`, upload `dist/store/apart-extension-<version>.zip` in the developer dashboard and submit it for review, before or alongside the npm release.
+- [ ] Merge to `main`. The Publish workflow uploads the new extension and submits it for review (see Automatic uploads). After approval it waits as staged: click Publish in the developer dashboard, alongside approving the npm release.
 - [ ] Update the store listing and screenshots in `design/store/` when the popup, Activity or Settings pages change.
+
+## Automatic uploads
+
+The `chrome-web-store` job in `.github/workflows/publish.yml` runs on every merge to `main`. When the version in `src/extension/manifest.json` is newer than any the store has, it builds `yarn package:store`, uploads the zip through the Chrome Web Store API (v2) and submits it with `STAGED_PUBLISH`: after review the version waits until you click Publish in the developer dashboard. It stops with an error if an earlier version is still in review or staged, so publish or cancel that first. `scripts/chrome-web-store.mjs` does the upload.
+
+It signs in to Google without a stored key, through workload identity federation, and stays off until these repository variables are set (Settings, Secrets and variables, Actions, Variables): `CWS_PUBLISHER_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT`. `CWS_EXTENSION_ID` defaults to `aejkpibmfgojapfgoplgnokmblmacgpe`.
+
+**One-time setup**, in Google Cloud Shell or anywhere with `gcloud`:
+
+```bash
+PROJECT_ID=your-project-id
+gcloud services enable chromewebstore.googleapis.com iamcredentials.googleapis.com sts.googleapis.com --project "$PROJECT_ID"
+gcloud iam service-accounts create apart-cws --project "$PROJECT_ID" --display-name "apart Chrome Web Store"
+gcloud iam workload-identity-pools create github --project "$PROJECT_ID" --location global --display-name "GitHub"
+gcloud iam workload-identity-pools providers create-oidc apart --project "$PROJECT_ID" --location global \
+  --workload-identity-pool github --issuer-uri "https://token.actions.githubusercontent.com" \
+  --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
+  --attribute-condition "assertion.repository == 'e6uka/apart' && assertion.ref == 'refs/heads/main'"
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format 'value(projectNumber)')
+gcloud iam service-accounts add-iam-policy-binding "apart-cws@$PROJECT_ID.iam.gserviceaccount.com" --project "$PROJECT_ID" \
+  --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/e6uka/apart"
+```
+
+Then:
+
+1. In the Chrome Web Store developer dashboard, open Account and add `apart-cws@<project-id>.iam.gserviceaccount.com` as the service account. Copy the publisher ID from the same page.
+2. Set the repository variables:
+
+   ```bash
+   gh variable set CWS_PUBLISHER_ID --repo e6uka/apart --body "<publisher-id>"
+   gh variable set GCP_SERVICE_ACCOUNT --repo e6uka/apart --body "apart-cws@<project-id>.iam.gserviceaccount.com"
+   gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --repo e6uka/apart --body "projects/<project-number>/locations/global/workloadIdentityPools/github/providers/apart"
+   ```
+
+Only workflow runs from `main` of `e6uka/apart` can get a token, and the token can only reach the Chrome Web Store API.
+

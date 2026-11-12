@@ -11,7 +11,7 @@ export interface ApartConfig {
   keepTabs: boolean;
 }
 
-export const DEFAULT_CONFIG: ApartConfig = { defaultBrowser: "chrome", keepTabs: false };
+export const DEFAULT_CONFIG: ApartConfig = { defaultBrowser: "chrome", keepTabs: true };
 
 export function isBrowser(value: unknown): value is RunBrowser {
   return isBrowserName(value);

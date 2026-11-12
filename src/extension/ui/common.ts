@@ -14,6 +14,7 @@ import slidersIcon from "lucide-static/icons/sliders-horizontal.svg";
 import trashIcon from "lucide-static/icons/trash-2.svg";
 import xIcon from "lucide-static/icons/x.svg";
 import { browserLabel, isBrowserName } from "../../shared/browsers";
+import { compareVersions, isReleaseVersion } from "../../shared/version";
 import type { DaemonInfo, RunBrowser, RunRecord, RunStarted } from "../../shared/protocol";
 
 const ICONS = {
@@ -57,10 +58,11 @@ export interface ExtensionState {
   browsers: string[] | null;
   browserName: string | null;
   keepTabs: boolean | null;
+  latestVersion: string | null;
 }
 
 export async function readState(): Promise<ExtensionState> {
-  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser", "keepTabs", "browser", "browsers", "browserName"]);
+  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser", "keepTabs", "browser", "browsers", "browserName", "latestVersion"]);
   return {
     status: (stored.status as ExtensionState["status"]) ?? null,
     daemon: (stored.daemon as DaemonInfo) ?? null,
@@ -72,6 +74,7 @@ export async function readState(): Promise<ExtensionState> {
     browsers: Array.isArray(stored.browsers) ? (stored.browsers as unknown[]).filter(isBrowserName) : null,
     browserName: isBrowserName(stored.browserName) ? stored.browserName : null,
     keepTabs: typeof stored.keepTabs === "boolean" ? stored.keepTabs : null,
+    latestVersion: isReleaseVersion(stored.latestVersion) ? stored.latestVersion : null,
   };
 }
 
@@ -148,7 +151,7 @@ export function escapeHtml(text: string): string {
 const COPY: Record<ConnectionState, { tab: string; title: string; body: string }> = {
   loading: { tab: "Checking", title: "Checking the connection", body: "One moment." },
   connected: { tab: "Connected", title: "Ready", body: "Your terminal can use this browser. Tabs apart opens go in the pink apart group." },
-  running: { tab: "Working", title: "Running a script", body: "Tabs it opens appear in the pink apart group and close when it finishes." },
+  running: { tab: "Working", title: "Running a script", body: "Tabs it opens appear in the pink apart group and stay open for the next run." },
   disconnected: { tab: "Offline", title: "Not connected", body: "This extension works with the apart command line tool. New here? Install it in your terminal and run setup. Already installed? Run doctor." },
   rejected: { tab: "Refused", title: "Connection refused", body: "The daemon did not accept this extension. Update apart in your terminal so the two match, then check again." },
   replaced: { tab: "Elsewhere", title: "Connected in another profile", body: "Another profile of this browser took over the connection. Give each profile its own name below to use both, or check again to take it back here." },
@@ -157,7 +160,9 @@ const COPY: Record<ConnectionState, { tab: string; title: string; body: string }
 export function renderStatusCard(root: HTMLElement, state: ExtensionState, options: { compact?: boolean } = {}): void {
   const kind: ConnectionState = state.status === null && state.daemon === null && root.dataset.state === undefined ? "loading" : connectionState(state);
   const previous = root.dataset.state;
-  const copy = COPY[kind];
+  const copy = kind === "running" && state.keepTabs === false
+    ? { ...COPY.running, body: "Tabs it opens appear in the pink apart group and close when it finishes." }
+    : COPY[kind];
   root.dataset.state = kind;
   root.classList.toggle("settled", previous !== undefined && previous !== kind && (kind === "connected" || kind === "running"));
   const tabIcon = kind === "running" ? icon("loader") : kind === "connected" ? icon("check") : kind === "loading" ? "" : icon("alert");
@@ -168,13 +173,13 @@ export function renderStatusCard(root: HTMLElement, state: ExtensionState, optio
     if (state.browser) facts.unshift(`<dt>Name</dt><dd>${escapeHtml(state.browser)}</dd>`);
     if (kind === "running" && state.current) facts.unshift(`<dt>Started</dt><dd>${escapeHtml(relativeTime(state.current.startedAt))}</dd>`);
     if (!options.compact) facts.push(`<dt>Extension</dt><dd>${escapeHtml(chrome.runtime.getManifest().version)}</dd>`);
-    extra = `<dl class="status-facts">${facts.join("")}</dl>`;
+    extra = `<dl class="status-facts">${facts.join("")}</dl>${updateNotice(state)}`;
   } else if (kind !== "loading") {
     const commands = kind === "rejected"
       ? ["npm install -g apart-browser@latest && apart daemon restart"]
       : ["npm install -g apart-browser && apart setup", port === 27170 ? "apart doctor" : `apart daemon start --port ${port}`];
     extra = `
-      ${commands.map((command) => `<div class="command"><code>${escapeHtml(command)}</code><button class="button ghost" type="button" data-copy="${escapeHtml(command)}">${icon("copy")}<span>Copy</span></button></div>`).join("")}
+      ${commands.map(copyCommand).join("")}
       <div class="status-actions"><button class="button primary" type="button" data-action="connect">${icon("refresh")}<span>Check now</span></button></div>
       <p class="status-hint" role="status" aria-live="polite">It keeps checking on its own.</p>`;
   }
@@ -183,6 +188,21 @@ export function renderStatusCard(root: HTMLElement, state: ExtensionState, optio
     <h2 class="status-title">${copy.title}</h2>
     <p class="status-body">${copy.body}</p>
     ${extra}`;
+}
+
+function copyCommand(command: string): string {
+  return `<div class="command"><code>${escapeHtml(command)}</code><button class="button ghost" type="button" data-copy="${escapeHtml(command)}">${icon("copy")}<span>Copy</span></button></div>`;
+}
+
+function updateNotice(state: ExtensionState): string {
+  const current = state.daemon?.version;
+  const latest = state.latestVersion;
+  if (!latest || !isReleaseVersion(current) || compareVersions(latest, current) <= 0) return "";
+  return `
+    <div class="update-notice">
+      <p><strong>apart ${escapeHtml(latest)} is out.</strong> Your terminal has ${escapeHtml(current)}. Run this to update it:</p>
+      ${copyCommand("apart update")}
+    </div>`;
 }
 
 export function bindStatusActions(root: HTMLElement): void {

@@ -115,7 +115,7 @@ export type DaemonToExt =
   | { type: "run-finished"; run: RunRecord }
   | { type: "run-ended"; id: string }
   | { type: "history"; runs: RunRecord[] }
-  | { type: "config"; defaultBrowser: RunBrowser; keepTabs: boolean; browsers?: string[] };
+  | { type: "config"; defaultBrowser: RunBrowser; keepTabs: boolean; browsers?: string[]; latestVersion?: string | null };
 
 export const RUN_HISTORY_LIMIT = 200;
 export const MAX_URLS_PER_RUN = 20;
