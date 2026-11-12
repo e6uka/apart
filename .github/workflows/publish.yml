@@ -48,7 +48,7 @@ jobs:
           npm stage publish --provenance --access public > stage.log 2>&1
           status=$?
           cat stage.log
-          if [ $status -ne 0 ] && grep -q "previously staged" stage.log; then
+          if [ $status -ne 0 ] && grep -qE "previously staged|Cannot stage previously published" stage.log; then
             echo "This version is already staged and waiting for approval on npmjs.com."
             exit 0
           fi
