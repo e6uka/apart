@@ -164,7 +164,7 @@ async function readStdin(): Promise<string> {
 }
 
 function updatesOff(): boolean {
-  return VERSION === "dev" || RUNS_FROM_CHECKOUT || updateChecksOff();
+  return VERSION === "dev" || updateChecksOff();
 }
 
 async function newerVersion(): Promise<{ latest: string; check: UpdateCheck } | null> {
@@ -783,19 +783,66 @@ async function commandSetup(flags: Map<string, string | true>): Promise<number> 
   return 0;
 }
 
-function runCommand(command: string[]): Promise<number> {
+function runCommand(command: string[], cwd?: string): Promise<number> {
   return new Promise((resolve) => {
-    spawn(command[0], command.slice(1), { stdio: "inherit" })
+    spawn(command[0], command.slice(1), { stdio: "inherit", cwd })
       .once("exit", (code) => resolve(code ?? 1))
       .once("error", () => resolve(127));
   });
 }
 
+function captureCommand(command: string[], cwd: string): Promise<{ code: number; out: string }> {
+  return new Promise((resolve) => {
+    let out = "";
+    const child = spawn(command[0], command.slice(1), { stdio: ["ignore", "pipe", "ignore"], cwd });
+    child.stdout.on("data", (chunk) => (out += chunk));
+    child.once("exit", (code) => resolve({ code: code ?? 1, out })).once("error", () => resolve({ code: 127, out }));
+  });
+}
+
+async function restartDaemonIfIdle(from: string, to: string): Promise<void> {
+  const status = await daemonStatus();
+  if (status?.running) console.log(`${createStyle().dim(MARK.info)} The daemon is running a script, so it keeps ${from} until the next run starts ${to}.`);
+  else if (status) await runCommand([process.execPath, SCRIPT_PATH, "daemon", "restart"]);
+}
+
+async function updateCheckout(latest: string, style: Style): Promise<number> {
+  const { accent, bold, dim, ok, bad } = style;
+  const dir = path.dirname(DIST_DIR);
+  const changes = await captureCommand(["git", "status", "--porcelain", "--untracked-files=no"], dir);
+  if (changes.code !== 0) {
+    console.error(`${bad(bold(MARK.problem))} Could not read the git checkout at ${tilde(dir)}. Update it there with git pull, then yarn build.`);
+    return 1;
+  }
+  if (changes.out.trim()) {
+    console.error(`${bad(bold(MARK.problem))} The checkout at ${tilde(dir)} has uncommitted changes. Commit or stash them, then run ${accent("apart update")} again.`);
+    return 1;
+  }
+  const branch = (await captureCommand(["git", "rev-parse", "--abbrev-ref", "HEAD"], dir)).out.trim() || "the current branch";
+  console.log(`Updating the checkout at ${tilde(dir)} (${branch}) toward ${latest}`);
+  for (const step of [["git", "pull", "--ff-only"], ["yarn", "install", "--frozen-lockfile"], ["yarn", "build"]]) {
+    console.log(dim(`$ ${step.join(" ")}`));
+    const code = await runCommand(step, dir);
+    if (code !== 0) {
+      console.error(`${bad(bold(MARK.problem))} ${step.join(" ")} ${code === 127 ? "could not start" : `did not finish (exit code ${code})`}. Its message above says why.`);
+      return 1;
+    }
+  }
+  const now = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")).version as string;
+  await restartDaemonIfIdle(VERSION, now);
+  if (compareVersions(now, latest) < 0) {
+    console.log(`${dim(MARK.info)} ${branch} is at ${now} after pulling; ${latest} is on main. Run ${accent("git checkout main")} in ${tilde(dir)}, then ${accent("apart update")} again.`);
+    return 0;
+  }
+  console.log(`${ok(bold(MARK.ok))} apart is now ${now}.`);
+  return 0;
+}
+
 async function commandUpdate(): Promise<number> {
   const style = createStyle();
   const { accent, bold, dim, ok, bad } = style;
-  if (RUNS_FROM_CHECKOUT || VERSION === "dev") {
-    console.error(`This apart runs from a git checkout (${tilde(path.dirname(DIST_DIR))}). Update it there with git pull, then yarn build.`);
+  if (VERSION === "dev") {
+    console.error("This apart was built without a version, so it cannot tell whether it is out of date.");
     return 1;
   }
   let latest: string;
@@ -810,6 +857,7 @@ async function commandUpdate(): Promise<number> {
     console.log(`${ok(bold(MARK.ok))} apart ${VERSION} is the newest version.`);
     return 0;
   }
+  if (RUNS_FROM_CHECKOUT) return updateCheckout(latest, style);
   const installer = installerFor(await fs.realpath(SCRIPT_PATH).catch(() => SCRIPT_PATH));
   console.log(`Updating apart ${VERSION} → ${latest} with ${installer.name}`);
   console.log(dim(`$ ${installer.command.join(" ")}`));
@@ -823,12 +871,7 @@ async function commandUpdate(): Promise<number> {
     if (installer.name === "npm") console.error(`  ${accent(MARK.next)} If it says EACCES, npm needs permission to write its global folder: https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally`);
     return 1;
   }
-  const status = await daemonStatus();
-  if (status?.running) {
-    console.log(`${dim(MARK.info)} The daemon is running a script, so it keeps ${VERSION} until the next run starts ${latest}.`);
-  } else if (status) {
-    await runCommand([process.execPath, SCRIPT_PATH, "daemon", "restart"]);
-  }
+  await restartDaemonIfIdle(VERSION, latest);
   console.log(`${ok(bold(MARK.ok))} apart is now ${latest}. The browser extension updates itself from the Chrome Web Store.`);
   return 0;
 }
