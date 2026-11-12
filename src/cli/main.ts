@@ -12,6 +12,8 @@ import { isBrowser, readConfig, writeConfig } from "../shared/config";
 import { APART_HOME, HEADLESS_PROFILE_DIR, LOG_DIR, SOCKET_PATH } from "../shared/paths";
 import { createStyle, extensionsPage, formatUptime, MARK, tilde, type Style } from "./style";
 import { DEFAULT_PORT, STORE_URL, cleanAgent, cleanPid, type CliMessage, type CliRequest, type DaemonStatus } from "../shared/protocol";
+import { PACKAGE_NAME, UPDATE_CHECK_INTERVAL_MS, fetchLatestVersion, installerFor, readUpdateCheck, refreshUpdateCheck, updateChecksOff, writeUpdateCheck, type UpdateCheck } from "../shared/update";
+import { compareVersions } from "../shared/version";
 
 declare const __APART_VERSION__: string;
 
@@ -20,7 +22,6 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const DIST_DIR = path.dirname(SCRIPT_PATH);
 const EXTENSION_DIR = path.join(DIST_DIR, "extension");
 const RUNS_FROM_CHECKOUT = existsSync(path.join(DIST_DIR, "..", ".git"));
-const PACKAGE_NAME = "apart-browser";
 const GSTACK_LINK = path.join(os.homedir(), ".local", "bin", "aside");
 const DAEMON_START_TIMEOUT_MS = 8000;
 
@@ -45,6 +46,7 @@ function help(style: Style = createStyle()): string {
     bold("Set up"),
     row("apart setup", "Choose the default browser, add the extension"),
     row("apart doctor", "Check everything and say what to fix"),
+    row("apart update", "Install the newest version"),
     "",
     bold("Settings"),
     row("apart config", "Show settings"),
@@ -82,6 +84,8 @@ Every run
     turned keep-tabs off (headless tabs always close).
   - Has a 120 s budget by default (--timeout <ms>, up to 600000).
   - Writes files only inside its run directory (console.log(pwd) prints it).
+  - May print "apart: <version> is out" before the output. Tell the user; do not run
+    apart update yourself unless they ask.
 
 Tabs belong to agents
   - Each run belongs to an agent: --agent <name>, else $APART_AGENT, else the Claude Code
@@ -159,14 +163,24 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function compareVersions(a: string, b: string): number {
-  const left = a.split(".").map(Number);
-  const right = b.split(".").map(Number);
-  for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    const diff = (left[i] || 0) - (right[i] || 0);
-    if (diff) return Math.sign(diff);
-  }
-  return 0;
+function updatesOff(): boolean {
+  return VERSION === "dev" || RUNS_FROM_CHECKOUT || updateChecksOff();
+}
+
+async function newerVersion(): Promise<{ latest: string; check: UpdateCheck } | null> {
+  if (updatesOff()) return null;
+  const check = await readUpdateCheck();
+  return check?.latest && compareVersions(check.latest, VERSION) > 0 ? { latest: check.latest, check } : null;
+}
+
+async function noticeUpdateOncePerDay(): Promise<void> {
+  const found = await newerVersion();
+  if (!found) return;
+  const { latest, check } = found;
+  const now = Date.now();
+  if (check.noticedVersion === latest && check.noticedAt !== undefined && now - check.noticedAt < UPDATE_CHECK_INTERVAL_MS) return;
+  await writeUpdateCheck({ ...check, noticedAt: now, noticedVersion: latest }).catch(() => undefined);
+  process.stderr.write(`apart: ${latest} is out (this is ${VERSION}). Run \`apart update\` to install it.\n`);
 }
 
 function addExtensionSteps(browser: string): string[] {
@@ -189,7 +203,7 @@ function extensionAdvice(item: { name: string; version: string; store?: boolean 
   const order = compareVersions(item.version, VERSION);
   if (order === 0) return null;
   if (item.store !== true) return { status: "problem", detail: `extension ${item.version}, but apart is ${VERSION}`, fix: [`Reload apart in \`${extensionsPage(item.name)}\``] };
-  if (order > 0) return { status: "problem", detail: `extension ${item.version}, but apart is ${VERSION}`, fix: [`\`npm install -g ${PACKAGE_NAME}@latest\``] };
+  if (order > 0) return { status: "problem", detail: `extension ${item.version}, but apart is ${VERSION}`, fix: ["`apart update`"] };
   return {
     status: "info",
     detail: `extension ${item.version}, apart is ${VERSION}; the store update is on its way`,
@@ -333,6 +347,7 @@ async function commandRepl(positional: string[], flags: Map<string, string | tru
     console.log(`[error ${error instanceof Error ? error.message : String(error)}]`);
     return;
   }
+  await noticeUpdateOncePerDay();
   const chosen = flags.get("browser");
   if (chosen !== undefined && !isBrowser(chosen)) {
     console.log("[error --browser needs a browser name, such as chrome, arc or headless]");
@@ -360,7 +375,7 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
   const action = positional[0] ?? "status";
   if (action === "run") {
     const { runDaemon } = await import("../daemon/index");
-    await runDaemon({ port, version: VERSION });
+    await runDaemon({ port, version: VERSION, checkUpdates: !updatesOff() });
     return new Promise<number>(() => undefined);
   }
   if (action === "start") {
@@ -415,6 +430,8 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
   console.log(`  ${label("Default")}${status.defaultBrowser}`);
   console.log(`  ${label("Tabs")}${status.keepTabs ? "stay open when a script ends" : "close when a script ends"}`);
   console.log(`  ${label("Headless")}${status.headlessRunning ? "running" : `idle ${dim("· starts on the next --headless run")}`}`);
+  const update = await newerVersion();
+  if (update) console.log(`  ${label("Update")}${update.latest} is out ${dim("·")} ${style.accent("apart update")}`);
   return status.extensionConnected ? 0 : 1;
 }
 
@@ -539,6 +556,12 @@ async function commandDoctor(flags: Map<string, string | true>): Promise<number>
   else if (onPath === null) system.checks.push({ status: "problem", label: "apart", detail: "not on PATH", fix: [`\`npm install -g ${PACKAGE_NAME}\`, or \`yarn global add ${PACKAGE_NAME}\``] });
   else if (onPathSelf) system.checks.push({ status: "ok", label: "apart", detail: `${VERSION}  ${tilde(onPath)}` });
   else system.checks.push({ status: "info", label: "apart", detail: `${VERSION} at ${tilde(self)}; another copy is first on PATH: ${tilde(onPath)}` });
+  if (!updatesOff()) {
+    const latest = (await refreshUpdateCheck())?.latest;
+    if (!latest) system.checks.push({ status: "info", label: "Updates", detail: "could not reach the npm registry to check" });
+    else if (compareVersions(latest, VERSION) > 0) system.checks.push({ status: "info", label: "Updates", detail: `${latest} is out, this is ${VERSION}`, fix: ["`apart update`"] });
+    else system.checks.push({ status: "ok", label: "Updates", detail: "this is the newest version" });
+  }
 
   let status = await daemonStatus();
   if (!status) {
@@ -753,8 +776,60 @@ async function commandSetup(flags: Map<string, string | true>): Promise<number> 
   console.log(bold("Next"));
   console.log(`  ${accent("apart doctor")}            ${dim("Check everything")}`);
   if (!flags.has("gstack")) console.log(`  ${accent("apart setup --gstack")}    ${dim("Let gstack's /browse and /scrape use apart")}`);
+  const update = await newerVersion();
+  if (update) console.log(`  ${accent("apart update")}            ${dim(`Install ${update.latest}; this is ${VERSION}`)}`);
   console.log("");
   console.log(agentHint(style));
+  return 0;
+}
+
+function runCommand(command: string[]): Promise<number> {
+  return new Promise((resolve) => {
+    spawn(command[0], command.slice(1), { stdio: "inherit" })
+      .once("exit", (code) => resolve(code ?? 1))
+      .once("error", () => resolve(127));
+  });
+}
+
+async function commandUpdate(): Promise<number> {
+  const style = createStyle();
+  const { accent, bold, dim, ok, bad } = style;
+  if (RUNS_FROM_CHECKOUT || VERSION === "dev") {
+    console.error(`This apart runs from a git checkout (${tilde(path.dirname(DIST_DIR))}). Update it there with git pull, then yarn build.`);
+    return 1;
+  }
+  let latest: string;
+  try {
+    latest = await fetchLatestVersion();
+  } catch (error) {
+    console.error(`${bad(bold(MARK.problem))} Could not check for a new version: ${error instanceof Error ? error.message : String(error)}. Check your internet connection and try again.`);
+    return 1;
+  }
+  await writeUpdateCheck({ ...(await readUpdateCheck()), checkedAt: Date.now(), latest }).catch(() => undefined);
+  if (compareVersions(latest, VERSION) <= 0) {
+    console.log(`${ok(bold(MARK.ok))} apart ${VERSION} is the newest version.`);
+    return 0;
+  }
+  const installer = installerFor(await fs.realpath(SCRIPT_PATH).catch(() => SCRIPT_PATH));
+  console.log(`Updating apart ${VERSION} → ${latest} with ${installer.name}`);
+  console.log(dim(`$ ${installer.command.join(" ")}`));
+  const code = await runCommand(installer.command);
+  if (code === 127) {
+    console.error(`${bad(bold(MARK.problem))} ${installer.name} was not found. Install the update yourself: ${accent(`npm install -g ${PACKAGE_NAME}@latest`)}`);
+    return 1;
+  }
+  if (code !== 0) {
+    console.error(`${bad(bold(MARK.problem))} ${installer.name} did not finish (exit code ${code}). Its message above says why.`);
+    if (installer.name === "npm") console.error(`  ${accent(MARK.next)} If it says EACCES, npm needs permission to write its global folder: https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally`);
+    return 1;
+  }
+  const status = await daemonStatus();
+  if (status?.running) {
+    console.log(`${dim(MARK.info)} The daemon is running a script, so it keeps ${VERSION} until the next run starts ${latest}.`);
+  } else if (status) {
+    await runCommand([process.execPath, SCRIPT_PATH, "daemon", "restart"]);
+  }
+  console.log(`${ok(bold(MARK.ok))} apart is now ${latest}. The browser extension updates itself from the Chrome Web Store.`);
   return 0;
 }
 
@@ -790,6 +865,8 @@ async function main(): Promise<number> {
       return 0;
     case "setup":
       return commandSetup(flags);
+    case "update":
+      return commandUpdate();
     case "extension-path":
       if (!RUNS_FROM_CHECKOUT) {
         console.error(`apart's extension comes from the Chrome Web Store now: ${STORE_URL}`);

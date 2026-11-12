@@ -87,7 +87,9 @@ Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart
 
 The npm package is called `apart-browser`, and the command it installs is `apart`. `apart setup` asks which browser runs should use by default (pass `--browser <name>` to skip the question), opens the store page in that browser on macOS if the extension is not there yet (`--no-open` skips that), and waits until the browser connects (Ctrl+C skips the wait).
 
-The store updates the extension on its own, and a new version can take a few days to pass review, so for a while after a release the extension and the command line tool may be a version apart. `apart doctor` says which side to update: `npm install -g apart-browser@latest` when the extension is newer, or nothing when the store update is still on its way (**Update** in `chrome://extensions`, with Developer mode on, fetches it sooner).
+The store updates the extension on its own, and a new version can take a few days to pass review, so for a while after a release the extension and the command line tool may be a version apart. `apart doctor` says which side to update: `apart update` when the extension is newer, or nothing when the store update is still on its way (**Update** in `chrome://extensions`, with Developer mode on, fetches it sooner).
+
+**Updates.** The extension updates itself from the store. The command line tool does not install updates on its own, but it tells you when one is out: once a day the daemon asks the npm registry for the newest version, and then `apart repl` prints one line on stderr (at most once a day), `apart doctor` and `apart daemon status` show it, and the extension's popup shows a Copy button. `apart update` installs it with the tool you installed apart with (npm, Yarn, pnpm, Volta or Bun) and restarts the daemon if it is idle. Set `APART_NO_UPDATE_CHECK=1` to turn the check off; it is also off when `CI` is set and in a git checkout.
 
 **Moving from the unpacked extension.** Earlier versions had you load the extension unpacked from `~/.apart/extension`. Add the store version, then remove the unpacked one in `chrome://extensions` and delete `~/.apart/extension`. The store copy is a different extension, so its own settings (a custom browser name or port) need setting again; run history carries over through `~/.apart/history.json`.
 
@@ -139,6 +141,7 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 | `apart config default-browser <name>` | Set the browser runs use without a flag. `apart config` shows the current settings. |
 | `apart config keep-tabs on\|off` | Whether tabs a script opened in your Chrome stay open when it ends, so later runs reuse them (on, the default), or close (off). Also in the extension's Settings. |
 | `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. `status --json` prints the status as JSON. |
+| `apart update` | Install the newest version from npm with the tool apart was installed with, then restart the daemon if no script is running. |
 | `apart doctor` | Check Node, the install, the daemon, each connected browser and the browser for headless runs, and say how to fix each problem. `--json` prints the result as JSON; the exit code is 1 when something needs fixing. |
 | `apart extension-path` | In a checkout, print the built extension folder to load unpacked. Installed from npm, it points to the Chrome Web Store instead. |
 | `apart skills list` | Prints that no skills are installed (kept for gstack compatibility). |
@@ -146,7 +149,7 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 
 `setup`, `doctor`, `daemon status` and `--help` use colour in a terminal. Colour is off when the output is piped, when `NO_COLOR` is set or when `TERM=dumb`; `FORCE_COLOR=1` turns it on. `repl` output never changes shape: in a terminal only its last line is coloured, and piped it is plain text, as agents see it. The designs for these screens are in [design/cli](design/cli).
 
-Logs: `~/.apart/logs/daemon.log`. Run directories: `~/.apart/runs/<timestamp>/` (the last 50 are kept). Run history: `~/.apart/history.json`. Settings: `~/.apart/config.json`. Headless browser profile: `~/.apart/headless-profile/`. Set `APART_CHROME` to choose which Chrome or Chromium headless runs use.
+Logs: `~/.apart/logs/daemon.log`. Run directories: `~/.apart/runs/<timestamp>/` (the last 50 are kept). Run history: `~/.apart/history.json`. Settings: `~/.apart/config.json`. Last update check: `~/.apart/update-check.json`. Headless browser profile: `~/.apart/headless-profile/`. Set `APART_CHROME` to choose which Chrome or Chromium headless runs use, and `APART_NO_UPDATE_CHECK=1` to stop the daily update check.
 
 ## Script API
 

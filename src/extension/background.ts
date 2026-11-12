@@ -1,3 +1,4 @@
+import { isReleaseVersion } from "../shared/version";
 import { DEFAULT_PORT, PROTOCOL_VERSION, mergeRuns, type CompletedDownload, type DaemonToExt, type ExtRequest, type ExtToDaemon, type RunBrowser, type RunRecord, type TabInfo } from "../shared/protocol";
 
 const ALARM_NAME = "apart-reconnect";
@@ -358,7 +359,7 @@ async function handleMessage(ws: WebSocket, message: DaemonToExt): Promise<void>
     } else if (message.type === "run-started") await chrome.storage.local.set({ current: message.run });
     else if (message.type === "run-finished") await recordRuns([message.run]);
     else if (message.type === "history") await recordRuns(message.runs);
-    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser, keepTabs: message.keepTabs === true, browsers: message.browsers ?? null });
+    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser, keepTabs: message.keepTabs === true, browsers: message.browsers ?? null, latestVersion: isReleaseVersion(message.latestVersion) ? message.latestVersion : null });
     else if (message.type === "run-ended") await chrome.storage.local.set({ current: null });
     return;
   }

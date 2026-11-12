@@ -9,6 +9,7 @@ import { RunHistory } from "./history";
 import { runScript } from "./runner";
 import { browserLabel } from "../shared/browsers";
 import { isBrowser, isHeadless, readConfig, writeConfig } from "../shared/config";
+import { refreshUpdateCheck } from "../shared/update";
 import { APART_HOME, HEADLESS_PROFILE_DIR, HISTORY_PATH, LOG_DIR, PID_PATH, RUNS_DIR, SOCKET_DIR, SOCKET_PATH } from "../shared/paths";
 import { allowedExtensionOrigins, cleanAgent, STORE_URL, cleanPid, type CliMessage, type CliRequest, type DaemonStatus, type ExtHello, type RunRecord } from "../shared/protocol";
 
@@ -16,6 +17,7 @@ const EXTENSION_WAIT_MS = 20000;
 const DEFAULT_SCRIPT_TIMEOUT_MS = 120000;
 const MAX_SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
 const KEEP_RUNS = 50;
+const UPDATE_POLL_MS = 60 * 60 * 1000;
 
 function log(message: string): void {
   process.stdout.write(`${new Date().toISOString()} ${message}\n`);
@@ -51,7 +53,7 @@ function write(socket: net.Socket, message: CliMessage): void {
   if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
 }
 
-export async function runDaemon(options: { port: number; version: string }): Promise<void> {
+export async function runDaemon(options: { port: number; version: string; checkUpdates?: boolean }): Promise<void> {
   const startedAt = Date.now();
   await fs.mkdir(APART_HOME, { recursive: true, mode: 0o700 });
   await fs.mkdir(LOG_DIR, { recursive: true });
@@ -68,7 +70,8 @@ export async function runDaemon(options: { port: number; version: string }): Pro
   const history = new RunHistory(HISTORY_PATH);
   let config = await readConfig();
   const headless = new HeadlessBrowser({ profileDir: HEADLESS_PROFILE_DIR, log });
-  const configMessage = () => ({ type: "config" as const, defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs, browsers: bridge.browsers().map((item) => item.name) });
+  let latestVersion: string | null = null;
+  const configMessage = () => ({ type: "config" as const, defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs, browsers: bridge.browsers().map((item) => item.name), latestVersion });
   const announceConfig = async (): Promise<void> => {
     config = await readConfig();
     bridge.notify(configMessage());
@@ -113,6 +116,17 @@ export async function runDaemon(options: { port: number; version: string }): Pro
     process.exit(1);
   }
   log(`listening for the extension on ws://127.0.0.1:${options.port}/ext`);
+  if (options.checkUpdates) {
+    const checkForUpdate = async (): Promise<void> => {
+      const latest = (await refreshUpdateCheck())?.latest ?? null;
+      if (latest === latestVersion) return;
+      latestVersion = latest;
+      log(`latest apart on npm: ${latest}`);
+      bridge.notify(configMessage());
+    };
+    void checkForUpdate().catch(() => undefined);
+    setInterval(() => void checkForUpdate().catch(() => undefined), UPDATE_POLL_MS).unref();
+  }
 
   let admission: Promise<void> = Promise.resolve();
   const queues = new Map<string, Promise<void>>();
