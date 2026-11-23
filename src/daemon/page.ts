@@ -276,6 +276,9 @@ export class Page {
   private overlaySyncing = false;
   private overlayOff: (() => void) | null = null;
   private cursorAt: { x: number; y: number } | null = null;
+  private actionDepth = 0;
+  private heldInputs = new Set<string>();
+  private closing = false;
   private childSessions = new Map<string, string>();
   private workerSessions = new Set<string>();
   private offline = false;
@@ -306,7 +309,7 @@ export class Page {
       click: (x, y, options) => this.mouseClick(x, y, options),
       move: (x, y) => this.mouseMove(x, y),
       wheel: async (deltaX, deltaY) => {
-        await this.control.gate();
+        await this.inputGate();
         await this.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 0, y: 0, deltaX, deltaY });
       },
     };
@@ -387,6 +390,7 @@ export class Page {
 
   async send<T = Record<string, any>>(method: string, params: CdpParams = {}, sessionId?: string): Promise<T> {
     if (this.detached) throw new Error(`Tab ${this.targetId} is closed`);
+    if (method === "Input.dispatchMouseEvent" || method === "Input.dispatchKeyEvent") this.trackHeld(method, params, sessionId);
     if (method === "Input.dispatchMouseEvent" && this.overlayTimer) {
       if (params.type === "mousePressed") await this.showPointer(params, sessionId, true);
       else if (params.type === "mouseMoved") void this.showPointer(params, sessionId, false);
@@ -399,7 +403,7 @@ export class Page {
   }
 
   async goto(url: string, options: { timeout?: number; waitUntil?: "load" | "commit" | "domcontentloaded" | "networkidle" } = {}): Promise<void> {
-    await this.control.gate();
+    await this.gate();
     const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
     const load = this.waitForLoad(timeout, `navigation to ${url}`);
     const result = await this.send<{ errorText?: string }>("Page.navigate", { url }).catch((error) => {
@@ -420,7 +424,7 @@ export class Page {
   }
 
   async reload(options: { timeout?: number } = {}): Promise<void> {
-    await this.control.gate();
+    await this.gate();
     const load = this.waitForLoad(options.timeout ?? DEFAULT_TIMEOUT_MS, "reload");
     await this.send("Page.reload");
     this.worlds.clear();
@@ -444,7 +448,7 @@ export class Page {
   }
 
   async evaluate(fn: string | ((...args: any[]) => unknown), ...args: unknown[]): Promise<unknown> {
-    await this.control.gate();
+    await this.gate();
     const expression = typeof fn === "function" ? `(${fn.toString()})(${serializeArgs(args)})` : String(fn);
     const result = await this.send<EvalResult>("Runtime.evaluate", {
       expression,
@@ -585,7 +589,7 @@ export class Page {
       const size = metrics.cssContentSize ?? metrics.contentSize;
       params.clip = { x: 0, y: 0, width: Math.ceil(size.width), height: Math.min(Math.ceil(size.height), 16384), scale: 1 };
     }
-    await this.control.gate();
+    await this.gate();
     const hidden = this.overlayTimer ? await this.evalInWorld("__apart.ui.hide()", true).then(() => true, () => false) : false;
     let data: string;
     try {
@@ -664,7 +668,8 @@ export class Page {
   }
 
   async close(): Promise<void> {
-    if (this.detached) return;
+    if (this.detached || this.closing) return;
+    this.closing = true;
     if (this.ownership === "borrowed") {
       await this.restoreOnline();
       await this.stopOverlay(true);
@@ -678,7 +683,8 @@ export class Page {
   }
 
   async leaveOpen(agent?: string, agentPid?: number): Promise<void> {
-    if (this.detached) return;
+    if (this.detached || this.closing) return;
+    this.closing = true;
     await this.restoreOnline();
     await this.stopOverlay(true);
     this.detached = true;
@@ -689,7 +695,7 @@ export class Page {
   }
 
   async pressKey(key: string): Promise<void> {
-    await this.control.gate();
+    await this.inputGate();
     const descriptor = keyDescriptor(key);
     const base = { key: descriptor.key, code: descriptor.code, windowsVirtualKeyCode: descriptor.keyCode, nativeVirtualKeyCode: descriptor.keyCode, modifiers: descriptor.modifiers };
     await this.send("Input.dispatchKeyEvent", { ...base, type: descriptor.text ? "keyDown" : "rawKeyDown", text: descriptor.text, unmodifiedText: descriptor.text });
@@ -697,12 +703,12 @@ export class Page {
   }
 
   async insertText(text: string): Promise<void> {
-    await this.control.gate();
+    await this.inputGate();
     await this.send("Input.insertText", { text });
   }
 
   async mouseClick(x: number, y: number, options: { button?: "left" | "right" | "middle"; clickCount?: number; modifiers?: number } = {}, sessionId?: string): Promise<void> {
-    await this.control.gate();
+    await this.inputGate();
     const button = options.button ?? "left";
     const clicks = options.clickCount ?? 1;
     await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers: options.modifiers ?? 0 }, sessionId);
@@ -713,8 +719,33 @@ export class Page {
   }
 
   async mouseMove(x: number, y: number, sessionId?: string): Promise<void> {
-    await this.control.gate();
+    await this.inputGate();
     await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, sessionId);
+  }
+
+  async gate(): Promise<boolean> {
+    if (this.closing || this.detached) throw new Error(`Tab ${this.targetId} is closed`);
+    return this.control.gate();
+  }
+
+  async inAction<T>(action: () => Promise<T>): Promise<T> {
+    this.actionDepth += 1;
+    try {
+      return await action();
+    } finally {
+      this.actionDepth -= 1;
+    }
+  }
+
+  private async inputGate(): Promise<void> {
+    if (this.actionDepth > 0 || this.heldInputs.size > 0) return;
+    await this.gate();
+  }
+
+  private trackHeld(method: string, params: CdpParams, sessionId: string | undefined): void {
+    const key = method === "Input.dispatchMouseEvent" ? `mouse:${sessionId ?? ""}:${String(params.button ?? "left")}` : `key:${String(params.code ?? params.key ?? "")}`;
+    if (params.type === "mousePressed" || params.type === "keyDown" || params.type === "rawKeyDown") this.heldInputs.add(key);
+    else if (params.type === "mouseReleased" || params.type === "keyUp") this.heldInputs.delete(key);
   }
 
   private startOverlay(): void {
@@ -1305,7 +1336,7 @@ export class Locator {
         point = await this.clickPoint(handle, options.position, true);
       }
       const modifiers = (options.modifiers ?? []).reduce((bits, name) => bits | keyDescriptor(`${name}+a`).modifiers & ~8, 0);
-      if (await this.page.control.gate()) throw new PausedMidAction();
+      if (await this.page.gate()) throw new PausedMidAction();
       await this.page.mouseClick(point.x, point.y, { button: options.button, clickCount: options.clickCount, modifiers }, handle.ctx?.sessionId);
     }, options.timeout);
   }
@@ -1555,11 +1586,11 @@ export class Locator {
 
   private async withElement<T>(action: (handle: Handle) => Promise<T>, timeout = LOCATOR_TIMEOUT_MS, visible = true): Promise<T> {
     for (;;) {
-      await this.page.control.gate();
+      await this.page.gate();
       const handle = await this.resolve({ timeout, visible });
       try {
-        if (await this.page.control.gate()) continue;
-        return await action(handle);
+        if (await this.page.gate()) continue;
+        return await this.page.inAction(() => action(handle));
       } catch (error) {
         if (error instanceof PausedMidAction) continue;
         throw error;

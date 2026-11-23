@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PausedTooLongError, RunControl } from "../src/daemon/control";
+import { PausedTooLongError, RunControl, ScriptStoppedError } from "../src/daemon/control";
 
 describe("RunControl", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -53,14 +53,15 @@ describe("RunControl", () => {
     expect(waited).toBe(true);
   });
 
-  it("gives up on a pause that runs past the limit and releases waiters", async () => {
+  it("gives up on a pause that runs past the limit and stops waiters from acting", async () => {
     const control = new RunControl(60000);
     const expired = vi.fn();
     control.onExpired(expired);
     control.pause();
     const gate = control.gate();
     vi.advanceTimersByTime(60000);
-    expect(await gate).toBe(true);
+    await expect(gate).rejects.toBeInstanceOf(ScriptStoppedError);
+    await expect(control.gate()).rejects.toBeInstanceOf(ScriptStoppedError);
     expect(expired.mock.calls[0][0]).toBeInstanceOf(PausedTooLongError);
     expect(control.pause()).toBe(false);
   });

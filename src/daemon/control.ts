@@ -7,6 +7,13 @@ export class PausedTooLongError extends Error {
   }
 }
 
+export class ScriptStoppedError extends Error {
+  constructor() {
+    super("The script has stopped");
+    this.name = "ScriptStoppedError";
+  }
+}
+
 type Listener = (paused: boolean) => void;
 
 export class RunControl {
@@ -73,6 +80,7 @@ export class RunControl {
   }
 
   async gate(): Promise<boolean> {
+    if (this.ended) throw new ScriptStoppedError();
     if (this.pausedAt === null) return false;
     await new Promise<void>((resolve) => {
       const off = this.onChange((paused) => {
@@ -81,6 +89,7 @@ export class RunControl {
         resolve();
       });
     });
+    if (this.ended) throw new ScriptStoppedError();
     return true;
   }
 

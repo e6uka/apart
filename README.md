@@ -69,7 +69,7 @@ While a script drives a tab in your browser, that tab shows:
 
 - **A glow** around the edges of the page, so you can tell at a glance which tab apart is working in.
 - **A cursor** that moves to each point apart clicks, hovers or drags, with a ripple on every click.
-- **A Take over button** in a small pill at the bottom. Press it and apart stops at its next step, so you can sign in, solve a captcha or fix something yourself. The glow turns grey and the button becomes **Resume**; press it to hand control back. The script's output says when you paused and resumed. Paused time does not count toward the script's time limit or its waits. A pause that lasts more than 15 minutes ends the script, and closing the paused tab resumes it.
+- **A Take over button** in a small pill at the bottom. Press it and apart stops at its next step, so you can sign in, solve a captcha or fix something yourself. It works inside pop-up dialogs too. The glow turns grey and the button becomes **Resume**; press it to hand control back. The script's output says when you paused and resumed. Paused time does not count toward the script's time limit or its waits. A pause that lasts more than 15 minutes ends the script, and closing the paused tab resumes it.
 
 apart stops between steps, never in the middle of one, so a key or mouse button is never left held down. If you paused while apart was about to click, it finds the element again before clicking, in case you scrolled or the page changed.
 

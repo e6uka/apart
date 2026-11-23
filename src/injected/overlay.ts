@@ -187,18 +187,28 @@ function build(): Parts {
   return { host, root, cursor, pill, label, button };
 }
 
+function topModal(): Element | null {
+  const modals = Array.from(document.querySelectorAll("dialog")).filter((dialog) => dialog.matches(":modal"));
+  return modals[modals.length - 1] ?? null;
+}
+
+function raise(host: HTMLElement): void {
+  const popover = host as HTMLElement & { showPopover?: () => void; hidePopover?: () => void };
+  if (typeof popover.showPopover !== "function") return;
+  host.setAttribute("popover", "manual");
+  try {
+    if (host.matches(":popover-open")) popover.hidePopover?.();
+    popover.showPopover();
+  } catch {}
+}
+
 function mount(): Parts {
-  if (parts && parts.host.isConnected && parts.host.parentNode === document.documentElement) return parts;
-  for (const stale of Array.from(document.querySelectorAll(TAG))) stale.remove();
+  const target = topModal() ?? document.documentElement;
+  if (parts && parts.host.isConnected && parts.host.parentNode === target) return parts;
+  for (const stale of Array.from(document.querySelectorAll(TAG))) if (stale !== parts?.host) stale.remove();
   parts ??= build();
-  document.documentElement.appendChild(parts.host);
-  const popover = parts.host as HTMLElement & { showPopover?: () => void };
-  if (typeof popover.showPopover === "function") {
-    parts.host.setAttribute("popover", "manual");
-    try {
-      popover.showPopover();
-    } catch {}
-  }
+  target.appendChild(parts.host);
+  raise(parts.host);
   return parts;
 }
 

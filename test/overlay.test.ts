@@ -33,6 +33,10 @@ const PAGE = `<!doctype html><html><head><title>overlay</title></head>
 <button id="under" onclick="this.textContent='reached'" style="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);width:120px;height:30px">Under</button>
 </body></html>`;
 
+const MODAL_PAGE = `<!doctype html><title>modal</title><body style="margin:0">
+<dialog id="d"><p>Sign in</p><button id="inside" onclick="this.textContent='reached'">Inside</button></dialog>
+<script>document.getElementById("d").showModal();</script></body>`;
+
 function firstPixel(png: Buffer): [number, number, number] {
   let offset = 8;
   const idat: Buffer[] = [];
@@ -120,7 +124,7 @@ describe.skipIf(!enabled)("overlay in the user's browser", () => {
     server = createServer((req, res) => {
       res.setHeader("content-type", "text/html; charset=utf-8");
       if (req.url?.startsWith("/strict")) res.setHeader("content-security-policy", "style-src 'none'; require-trusted-types-for 'script'");
-      res.end(PAGE);
+      res.end(req.url?.startsWith("/modal") ? MODAL_PAGE : PAGE);
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
     base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -170,15 +174,12 @@ describe.skipIf(!enabled)("overlay in the user's browser", () => {
         console.log("TREE=" + JSON.stringify((await snapshot(pg)).tree));
         const shot = await pg.screenshot();
         console.log("SHOT=" + shot.toString("base64"));
-        await pg.locator("#under").click();
-        console.log("UNDER=" + await pg.locator("#under").innerText());
       `,
     });
     expect(result.error).toBeUndefined();
     const text = out.join("\n");
     expect(text).toContain("HOST=1");
     expect(text).not.toMatch(/Take over|apart is working/);
-    expect(text).toContain("UNDER=reached");
     expect(firstPixel(Buffer.from(text.match(/SHOT=(\S+)/)![1], "base64"))).toEqual([255, 255, 255]);
     const session = await cdp.session("/strict");
     expect(await cdp.evaluate(session, `document.querySelectorAll("apart-overlay").length`)).toBe(0);
@@ -239,6 +240,47 @@ describe.skipIf(!enabled)("overlay in the user's browser", () => {
         await pg.locator("#under").click();
         console.log("WAITED=" + (Date.now() - started));
         console.log("UNDER=" + await pg.locator("#under").innerText());
+        await closeTab(pg);
+      `,
+    });
+    const text = out.join("\n");
+    if (process.env.APART_E2E_VERBOSE === "1") process.stderr.write(`${text}\n${result.error ?? ""}\n`);
+    expect(result.error).toBeUndefined();
+    expect(text).toContain("[paused: you took over the tab");
+    expect(text).toContain("[resumed: apart has control again]");
+    expect(Number(text.match(/WAITED=(\d+)/)![1])).toBeGreaterThan(3000);
+    expect(text).toContain("UNDER=reached");
+  }, 90000);
+
+  it("can be taken over while the page has a modal dialog open", async () => {
+    const out: string[] = [];
+    let session = "";
+    const pill = { x: 0, y: 0 };
+    const result = await runScript({
+      bridge,
+      runDir: mkdtempSync(path.join(os.tmpdir(), "apart-overlay-run-")),
+      timeoutMs: 6000,
+      emit: async (text) => {
+        out.push(text);
+        const ready = text.match(/^READY (\d+) (\d+)$/);
+        if (!ready) return;
+        session = await cdp.session("/modal");
+        pill.x = Number(ready[1]);
+        pill.y = Number(ready[2]);
+        await cdp.click(session, pill.x, pill.y);
+        await new Promise((resolve) => setTimeout(resolve, 7000));
+        await cdp.click(session, pill.x, pill.y);
+      },
+      code: `
+        const pg = await openTab(${JSON.stringify(`${base}/modal`)}, { newTab: true });
+        await sleep(600);
+        const at = await pg.evaluate(() => ({ x: Math.round(innerWidth / 2 + 70), y: innerHeight - 36 }));
+        console.log("READY " + at.x + " " + at.y);
+        await sleep(1500);
+        const started = Date.now();
+        await pg.locator("#inside").click();
+        console.log("WAITED=" + (Date.now() - started));
+        console.log("UNDER=" + await pg.locator("#inside").innerText());
         await closeTab(pg);
       `,
     });
