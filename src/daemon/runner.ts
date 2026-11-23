@@ -13,6 +13,7 @@ export interface RunOptions {
   timeoutMs: number;
   bridge: BrowserBackend;
   keepTabs?: boolean;
+  overlay?: boolean;
   agent?: string;
   agentPid?: number;
   emit: (text: string) => void;
@@ -91,7 +92,7 @@ class Session {
 
   private freed: Promise<void> | null = null;
 
-  constructor(private readonly bridge: BrowserBackend, private readonly runDir: string, private readonly log: (text: string) => void = () => undefined, private readonly agent?: string, private readonly agentPid?: number, readonly control = new RunControl()) {}
+  constructor(private readonly bridge: BrowserBackend, private readonly runDir: string, private readonly log: (text: string) => void = () => undefined, private readonly agent?: string, private readonly agentPid?: number, readonly control = new RunControl(), private readonly overlay = true) {}
 
   freeTabsOfEndedAgents(): Promise<void> {
     if (this.bridge.headless) return Promise.resolve();
@@ -168,7 +169,7 @@ class Session {
   }
 
   private async attach(tabId: number, ownership: Ownership, url: string): Promise<Page> {
-    const page = await Page.attach(this.bridge, tabId, ownership, this.runDir, url, (visited) => this.recordVisit(visited), this.log, this.control);
+    const page = await Page.attach(this.bridge, tabId, ownership, this.runDir, url, (visited) => this.recordVisit(visited), this.log, this.control, this.overlay);
     this.tabs.push(page);
     this.page = page;
     return page;
@@ -187,7 +188,7 @@ class Session {
 export async function runScript(options: RunOptions): Promise<RunResult> {
   const started = Date.now();
   let emitLine: (text: string) => void = () => undefined;
-  const session = new Session(options.bridge, options.runDir, (text) => emitLine(text), options.agent, options.agentPid);
+  const session = new Session(options.bridge, options.runDir, (text) => emitLine(text), options.agent, options.agentPid, new RunControl(), options.overlay ?? true);
   const confinedFs = createConfinedFs(options.runDir);
   const timers = new Set<NodeJS.Timeout>();
   const abort = new AbortController();

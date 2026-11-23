@@ -9,9 +9,10 @@ export const CONFIG_PATH = path.join(APART_HOME, "config.json");
 export interface ApartConfig {
   defaultBrowser: RunBrowser;
   keepTabs: boolean;
+  overlay: boolean;
 }
 
-export const DEFAULT_CONFIG: ApartConfig = { defaultBrowser: "chrome", keepTabs: true };
+export const DEFAULT_CONFIG: ApartConfig = { defaultBrowser: "chrome", keepTabs: true, overlay: true };
 
 export function isBrowser(value: unknown): value is RunBrowser {
   return isBrowserName(value);
@@ -27,6 +28,7 @@ export async function readConfig(file = CONFIG_PATH): Promise<ApartConfig & { sa
     return {
       defaultBrowser: isBrowser(parsed.defaultBrowser) ? parsed.defaultBrowser : DEFAULT_CONFIG.defaultBrowser,
       keepTabs: typeof parsed.keepTabs === "boolean" ? parsed.keepTabs : DEFAULT_CONFIG.keepTabs,
+      overlay: typeof parsed.overlay === "boolean" ? parsed.overlay : DEFAULT_CONFIG.overlay,
       saved: true,
     };
   } catch {

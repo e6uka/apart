@@ -63,6 +63,18 @@
       </form>
     </section>
 
+    <section class="section" aria-labelledby="overlay-title">
+      <h2 id="overlay-title">While a script runs</h2>
+      <p>Applies from the next run. Headless runs never show it.</p>
+      <form class="panel field" id="overlay-form">
+        <fieldset class="choices" id="overlay-choices" disabled>
+          <legend class="visually-hidden">While a script runs</legend>
+          <label class="choice"><input type="checkbox" name="overlay"><span><strong>Show that apart is working</strong><span>The tab glows at the edges, shows apart's cursor and has a Take over button so you can pause the run. Turning it off also removes Take over, and sites can no longer see an apart element in the page.</span></span></label>
+        </fieldset>
+        <p class="message" id="overlay-message" aria-live="polite"></p>
+      </form>
+    </section>
+
     <section class="section" aria-labelledby="setup-title">
       <h2 id="setup-title">First-time setup</h2>
       <ol class="steps">

@@ -300,6 +300,7 @@ export class Page {
     private readonly onVisit: (url: string) => void = () => undefined,
     private readonly log: (text: string) => void = () => undefined,
     readonly control: RunControl = new RunControl(),
+    private readonly overlayEnabled = true,
   ) {
     this.targetId = String(tabId);
     this.currentUrl = initialUrl;
@@ -315,8 +316,8 @@ export class Page {
     };
   }
 
-  static async attach(bridge: BrowserBackend, tabId: number, ownership: Ownership, runDir: string, initialUrl: string, onVisit?: (url: string) => void, log?: (text: string) => void, control?: RunControl): Promise<Page> {
-    const page = new Page(bridge, tabId, ownership, runDir, initialUrl, onVisit, log, control);
+  static async attach(bridge: BrowserBackend, tabId: number, ownership: Ownership, runDir: string, initialUrl: string, onVisit?: (url: string) => void, log?: (text: string) => void, control?: RunControl, overlay = true): Promise<Page> {
+    const page = new Page(bridge, tabId, ownership, runDir, initialUrl, onVisit, log, control, overlay);
     onVisit?.(initialUrl);
     await bridge.request("debugger.attach", { tabId });
     await page.send("Page.enable");
@@ -471,6 +472,7 @@ export class Page {
 
   async setOffline(offline: boolean): Promise<void> {
     this.offline = Boolean(offline);
+    void this.syncOverlay();
     await this.applyOffline(undefined);
     await Promise.all([...this.childSessions.keys(), ...this.workerSessions].map((sessionId) => this.applyOffline(sessionId).catch(() => undefined)));
   }
@@ -749,7 +751,7 @@ export class Page {
   }
 
   private startOverlay(): void {
-    if (this.bridge.headless || this.overlayTimer) return;
+    if (!this.overlayEnabled || this.bridge.headless || this.overlayTimer) return;
     this.overlayTimer = setInterval(() => void this.syncOverlay(), OVERLAY_TICK_MS);
     this.overlayOff = this.control.onChange(() => void this.syncOverlay());
     void this.syncOverlay();
@@ -768,7 +770,7 @@ export class Page {
     if (!this.overlayTimer || this.detached || this.overlaySyncing) return;
     this.overlaySyncing = true;
     try {
-      const state = JSON.stringify({ paused: this.control.paused, cursor: this.cursorAt });
+      const state = JSON.stringify({ paused: this.control.paused, offline: this.offline, cursor: this.cursorAt });
       const request = await this.evalInWorld(`__apart.ui.tick(${state})`, true);
       if (request === "pause" && this.control.pause(this)) this.log("[paused: you took over the tab. apart waits until you press Resume]");
       else if (request === "resume" && this.control.resume()) this.log("[resumed: apart has control again]");

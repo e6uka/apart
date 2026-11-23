@@ -17,6 +17,9 @@ const nameMessage = document.getElementById("name-message") as HTMLParagraphElem
 const tabsChoices = document.getElementById("tabs-choices") as HTMLFieldSetElement;
 const tabsMessage = document.getElementById("tabs-message") as HTMLParagraphElement;
 const keepTabsInput = tabsChoices.querySelector<HTMLInputElement>("input[name=keep-tabs]")!;
+const overlayChoices = document.getElementById("overlay-choices") as HTMLFieldSetElement;
+const overlayMessage = document.getElementById("overlay-message") as HTMLParagraphElement;
+const overlayInput = overlayChoices.querySelector<HTMLInputElement>("input[name=overlay]")!;
 
 let portLoaded = false;
 let pendingBrowser: RunBrowser | null = null;
@@ -84,56 +87,89 @@ nameForm.addEventListener("submit", async (event) => {
   }
 });
 let pendingTimer: number | undefined;
-let pendingKeepTabs: boolean | null = null;
-let keepTabsTimer: number | undefined;
 
-function renderTabs(state: ExtensionState): void {
-  const live = connectionState(state) === "connected" || connectionState(state) === "running";
-  if (pendingKeepTabs !== null && state.keepTabs === pendingKeepTabs) {
-    window.clearTimeout(keepTabsTimer);
-    tabsMessage.className = "message ok";
-    tabsMessage.textContent = pendingKeepTabs ? "Saved. Tabs stay open when a script ends." : "Saved. Tabs close when a script ends.";
-    pendingKeepTabs = null;
-  }
-  if (pendingKeepTabs !== null) return;
-  tabsChoices.disabled = !live || state.keepTabs === null;
-  keepTabsInput.checked = state.keepTabs === true;
-  if (!live) {
-    tabsMessage.className = "message";
-    tabsMessage.textContent = "Connect apart to change this here, or run apart config keep-tabs on|off in your terminal.";
-  } else if (state.keepTabs === null) {
-    tabsMessage.className = "message";
-    tabsMessage.textContent = "This apart version cannot change it from here. Update apart, then run apart daemon restart.";
-  } else if (tabsMessage.classList.contains("error") || !tabsMessage.classList.contains("ok")) {
-    tabsMessage.className = "message";
-    tabsMessage.textContent = "";
-  }
+interface ToggleSetting {
+  choices: HTMLFieldSetElement;
+  input: HTMLInputElement;
+  message: HTMLParagraphElement;
+  read: (state: ExtensionState) => boolean | null;
+  send: (value: boolean) => Record<string, unknown>;
+  saved: (value: boolean) => string;
+  command: string;
 }
 
-keepTabsInput.addEventListener("change", async () => {
-  const keep = keepTabsInput.checked;
-  pendingKeepTabs = keep;
-  tabsMessage.className = "message";
-  tabsMessage.textContent = "Saving…";
+function bindToggle(setting: ToggleSetting): (state: ExtensionState) => void {
+  let pending: boolean | null = null;
+  let timer: number | undefined;
+  const { choices, input, message } = setting;
   const fail = (text: string) => {
-    pendingKeepTabs = null;
-    tabsMessage.className = "message error";
-    tabsMessage.textContent = text;
+    pending = null;
+    message.className = "message error";
+    message.textContent = text;
     void render();
   };
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "apart:set-keep-tabs", keep });
-    if (!response?.ok) {
-      fail("Could not save: apart is not connected. Check the connection above and try again.");
-      return;
+  input.addEventListener("change", async () => {
+    const value = input.checked;
+    pending = value;
+    message.className = "message";
+    message.textContent = "Saving…";
+    try {
+      const response = await chrome.runtime.sendMessage(setting.send(value));
+      if (!response?.ok) {
+        fail("Could not save: apart is not connected. Check the connection above and try again.");
+        return;
+      }
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (pending === value) fail(`apart did not confirm the change. Try again, or run ${setting.command} in your terminal.`);
+      }, 5000);
+    } catch (error) {
+      fail(`Could not save: ${error instanceof Error ? error.message : String(error)}`);
     }
-    window.clearTimeout(keepTabsTimer);
-    keepTabsTimer = window.setTimeout(() => {
-      if (pendingKeepTabs === keep) fail("apart did not confirm the change. Try again, or run apart config keep-tabs in your terminal.");
-    }, 5000);
-  } catch (error) {
-    fail(`Could not save: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  });
+  return (state) => {
+    const live = connectionState(state) === "connected" || connectionState(state) === "running";
+    const current = setting.read(state);
+    if (pending !== null && current === pending) {
+      window.clearTimeout(timer);
+      message.className = "message ok";
+      message.textContent = setting.saved(pending);
+      pending = null;
+    }
+    if (pending !== null) return;
+    choices.disabled = !live || current === null;
+    input.checked = current === true;
+    if (!live) {
+      message.className = "message";
+      message.textContent = `Connect apart to change this here, or run ${setting.command} in your terminal.`;
+    } else if (current === null) {
+      message.className = "message";
+      message.textContent = "This apart version cannot change it from here. Update apart, then run apart daemon restart.";
+    } else if (message.classList.contains("error") || !message.classList.contains("ok")) {
+      message.className = "message";
+      message.textContent = "";
+    }
+  };
+}
+
+const renderTabs = bindToggle({
+  choices: tabsChoices,
+  input: keepTabsInput,
+  message: tabsMessage,
+  read: (state) => state.keepTabs,
+  send: (keep) => ({ type: "apart:set-keep-tabs", keep }),
+  saved: (keep) => (keep ? "Saved. Tabs stay open when a script ends." : "Saved. Tabs close when a script ends."),
+  command: "apart config keep-tabs on|off",
+});
+
+const renderOverlay = bindToggle({
+  choices: overlayChoices,
+  input: overlayInput,
+  message: overlayMessage,
+  read: (state) => state.overlay,
+  send: (show) => ({ type: "apart:set-overlay", show }),
+  saved: (show) => (show ? "Saved. From the next run, apart shows when it is working." : "Saved. From the next run, apart works without the glow, cursor or Take over button."),
+  command: "apart config overlay on|off",
 });
 
 function renderBrowser(state: ExtensionState): void {
@@ -194,6 +230,7 @@ async function render(): Promise<void> {
     renderStatusCard(statusRoot, state);
     renderBrowser(state);
     renderTabs(state);
+    renderOverlay(state);
     renderName(state);
     if (!portLoaded) {
       portInput.value = String(state.port ?? DEFAULT_PORT);

@@ -292,4 +292,55 @@ describe.skipIf(!enabled)("overlay in the user's browser", () => {
     expect(Number(text.match(/WAITED=(\d+)/)![1])).toBeGreaterThan(3000);
     expect(text).toContain("UNDER=reached");
   }, 90000);
+  it("turns amber while the tab is offline", async () => {
+    let rawShot = "";
+    const result = await runScript({
+      bridge,
+      runDir: mkdtempSync(path.join(os.tmpdir(), "apart-overlay-run-")),
+      timeoutMs: 60000,
+      emit: async (text) => {
+        if (text !== "READY") return;
+        const session = await cdp.session("/offline-glow");
+        rawShot = (await cdp.send("Page.captureScreenshot", { format: "png" }, session)).data;
+      },
+      code: `
+        const pg = await openTab(${JSON.stringify(`${base}/offline-glow`)}, { newTab: true });
+        await pg.setOffline(true);
+        await sleep(800);
+        console.log("READY");
+        await sleep(1500);
+        await pg.setOffline(false);
+        await closeTab(pg);
+      `,
+    });
+    expect(result.error).toBeUndefined();
+    const [r, g, b] = firstPixel(Buffer.from(rawShot, "base64"));
+    expect(r).toBeGreaterThan(b + 60);
+    expect(g).toBeGreaterThan(b + 20);
+  }, 90000);
+
+  it("shows nothing when the overlay setting is off", async () => {
+    const counts: unknown[] = [];
+    const result = await runScript({
+      bridge,
+      runDir: mkdtempSync(path.join(os.tmpdir(), "apart-overlay-run-")),
+      timeoutMs: 60000,
+      overlay: false,
+      emit: async (text) => {
+        if (text !== "READY") return;
+        const session = await cdp.session("/no-overlay");
+        counts.push(await cdp.evaluate(session, `document.querySelectorAll("apart-overlay").length`));
+      },
+      code: `
+        const pg = await openTab(${JSON.stringify(`${base}/no-overlay`)}, { newTab: true });
+        await pg.mouse.click(200, 200);
+        await sleep(900);
+        console.log("READY");
+        await sleep(800);
+        await closeTab(pg);
+      `,
+    });
+    expect(result.error).toBeUndefined();
+    expect(counts).toEqual([0]);
+  }, 90000);
 });

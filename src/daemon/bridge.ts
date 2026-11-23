@@ -295,6 +295,10 @@ export class ExtensionBridge extends EventEmitter implements BrowserBackend {
         this.emit("set-keep-tabs", message.keep);
         return;
       }
+      if (message.type === "set-overlay") {
+        this.emit("set-overlay", message.show);
+        return;
+      }
     }
     connection.handle(message);
   }

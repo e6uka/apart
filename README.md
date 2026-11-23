@@ -67,13 +67,15 @@ Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart
 
 While a script drives a tab in your browser, that tab shows:
 
-- **A glow** around the edges of the page, so you can tell at a glance which tab apart is working in.
+- **A glow** around the edges of the page, so you can tell at a glance which tab apart is working in. It is pink while apart works, amber with an Offline tag while the script has the tab offline (`setOffline(true)`), and grey while you have taken over.
 - **A cursor** that moves to each point apart clicks, hovers or drags, with a ripple on every click.
 - **A Take over button** in a small pill at the bottom. Press it and apart stops at its next step, so you can sign in, solve a captcha or fix something yourself. It works inside pop-up dialogs too. The glow turns grey and the button becomes **Resume**; press it to hand control back. The script's output says when you paused and resumed. Paused time does not count toward the script's time limit or its waits. A pause that lasts more than 15 minutes ends the script, and closing the paused tab resumes it.
 
 apart stops between steps, never in the middle of one, so a key or mouse button is never left held down. If you paused while apart was about to click, it finds the element again before clicking, in case you scrolled or the page changed.
 
 The glow, cursor and pill are not part of the page as the script sees it: they are left out of snapshots, screenshots and PDFs, and clicks pass through the pill. They disappear when the script ends, including from tabs kept open for the next run, and on their own within a few seconds if apart stops unexpectedly. Headless runs show none of this, since nobody is watching. The page itself can find the overlay's `<apart-overlay>` element in its DOM, but cannot see inside it or press its button.
+
+To drive tabs without any of this, turn it off with `apart config overlay off` or in the extension's Settings ("Show that apart is working"). It takes effect from the next run. With it off, sites have no apart element to find, and you can no longer pause a run from the tab.
 
 ## Requirements
 
@@ -151,6 +153,7 @@ This adds `~/.local/bin/aside` as a second link to the same binary. It is never 
 | `apart setup` | Choose the default browser (`--browser <name>` skips the question), open the extension's store page in it if needed (`--no-open` skips that) and wait for the browser to connect (`--no-wait` skips that). `--gstack` also links `~/.local/bin/aside` for gstack. |
 | `apart guide` | Print the guide for coding agents: how to write scripts, the script globals, the tab rules and what to do when something fails, plus the agent name this shell's runs belong to. |
 | `apart config default-browser <name>` | Set the browser runs use without a flag. `apart config` shows the current settings. |
+| `apart config overlay on\|off` | Whether tabs apart drives in your browser show the glow, cursor and Take over button (on, the default). Off removes them, including Take over. Also in the extension's Settings. |
 | `apart config keep-tabs on\|off` | Whether tabs a script opened in your Chrome stay open when it ends, so later runs reuse them (on, the default), or close (off). Also in the extension's Settings. |
 | `apart daemon start\|stop\|status\|restart` | Manage the background daemon. `repl` starts it automatically. `status --json` prints the status as JSON. |
 | `apart update` | Install the newest version from npm with the tool apart was installed with (in a git checkout: pull and rebuild), then restart the daemon if no script is running. |

@@ -34,6 +34,9 @@ const STYLES = `
   animation: breathe 2.4s ease-in-out infinite;
   transition: box-shadow 240ms ease-out;
 }
+.offline .glow {
+  box-shadow: inset 0 0 0 2px rgba(217, 140, 24, 0.9), inset 0 0 32px 6px rgba(217, 140, 24, 0.4);
+}
 .paused .glow {
   box-shadow: inset 0 0 0 2px rgba(110, 98, 115, 0.7);
   animation: none;
@@ -93,7 +96,17 @@ const STYLES = `
   flex: none;
   animation: breathe 1.6s ease-in-out infinite;
 }
+.offline .dot { background: #F2B14C; }
 .paused .dot { background: #B3A6B4; animation: none; }
+.tag {
+  display: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(242, 177, 76, 0.18);
+  color: #F2B14C;
+  font: 600 11px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+.offline .tag { display: inline-block; }
 button {
   all: unset;
   box-sizing: border-box;
@@ -116,7 +129,7 @@ button:focus-visible { outline: 2px solid #EE6AAA; outline-offset: 2px; }
 }
 `;
 
-type State = { paused: boolean; cursor?: { x: number; y: number } | null };
+type State = { paused: boolean; offline?: boolean; cursor?: { x: number; y: number } | null };
 type Request = "pause" | "resume" | null;
 
 interface Parts {
@@ -127,6 +140,8 @@ interface Parts {
   label: HTMLSpanElement;
   button: HTMLButtonElement;
 }
+
+let offline = false;
 
 let parts: Parts | null = null;
 let pending: Request = null;
@@ -171,6 +186,9 @@ function build(): Parts {
   const dot = document.createElement("span");
   dot.className = "dot";
   const label = document.createElement("span");
+  const tag = document.createElement("span");
+  tag.className = "tag";
+  tag.textContent = "Offline";
   const button = document.createElement("button");
   button.type = "button";
   button.addEventListener("click", (event) => {
@@ -181,7 +199,7 @@ function build(): Parts {
   for (const type of ["mousedown", "mouseup", "pointerdown", "pointerup", "keydown", "keyup"]) {
     pill.addEventListener(type, (event) => event.stopPropagation());
   }
-  pill.append(dot, label, button);
+  pill.append(dot, label, tag, button);
   root.append(glow, cursor, pill);
   shadow.appendChild(root);
   return { host, root, cursor, pill, label, button };
@@ -214,7 +232,7 @@ function mount(): Parts {
 
 function render(state: boolean): void {
   if (!parts) return;
-  parts.root.className = state ? "paused" : "";
+  parts.root.className = [state ? "paused" : "", offline ? "offline" : ""].filter(Boolean).join(" ");
   parts.label.textContent = state ? "You're in control" : "apart is working";
   parts.button.textContent = state ? "Resume" : "Take over";
   parts.button.setAttribute("aria-label", state ? "Hand control back to apart" : "Pause apart and take over this tab");
@@ -228,11 +246,12 @@ function placeCursor(x: number, y: number): void {
 
 function tick(state: State): Request {
   const current = mount();
+  offline = state.offline === true;
   if (pending === null || (pending === "pause") === state.paused) {
     pending = null;
     paused = state.paused;
-    render(paused);
   }
+  render(pending === null ? paused : pending === "pause");
   if (state.cursor && !current.cursor.classList.contains("shown")) placeCursor(state.cursor.x, state.cursor.y);
   if (expiry) clearTimeout(expiry);
   expiry = setTimeout(remove, TTL_MS);

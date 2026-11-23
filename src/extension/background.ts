@@ -359,7 +359,7 @@ async function handleMessage(ws: WebSocket, message: DaemonToExt): Promise<void>
     } else if (message.type === "run-started") await chrome.storage.local.set({ current: message.run });
     else if (message.type === "run-finished") await recordRuns([message.run]);
     else if (message.type === "history") await recordRuns(message.runs);
-    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser, keepTabs: message.keepTabs === true, browsers: message.browsers ?? null, latestVersion: isReleaseVersion(message.latestVersion) ? message.latestVersion : null });
+    else if (message.type === "config") await chrome.storage.local.set({ defaultBrowser: message.defaultBrowser, keepTabs: message.keepTabs === true, overlay: typeof message.overlay === "boolean" ? message.overlay : null, browsers: message.browsers ?? null, latestVersion: isReleaseVersion(message.latestVersion) ? message.latestVersion : null });
     else if (message.type === "run-ended") await chrome.storage.local.set({ current: null });
     return;
   }
@@ -482,12 +482,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     void connect().then(() => sendResponse({ ok: true }), (error) => sendResponse({ ok: false, error: String(error) }));
     return true;
   }
-  if (message?.type === "apart:set-default-browser" || message?.type === "apart:set-keep-tabs") {
+  if (message?.type === "apart:set-default-browser" || message?.type === "apart:set-keep-tabs" || message?.type === "apart:set-overlay") {
     if (socket?.readyState !== WebSocket.OPEN) {
       sendResponse({ ok: false, error: "apart is not connected" });
       return false;
     }
     if (message.type === "apart:set-default-browser") send({ type: "set-default-browser", browser: message.browser as RunBrowser });
+    else if (message.type === "apart:set-overlay") send({ type: "set-overlay", show: message.show === true });
     else send({ type: "set-keep-tabs", keep: message.keep === true });
     sendResponse({ ok: true });
     return false;
