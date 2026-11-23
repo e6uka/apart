@@ -182,6 +182,7 @@ Each `repl` call is a fresh session. Variables do not persist between calls. Tab
 - `screenshot({ path, type: "png" | "jpeg" | "webp", quality, fullPage, clip })` → `Buffer`
 - `pdf({ path, format, landscape, printBackground, margin, pageRanges })` → `Buffer`
 - `setViewportSize({ width, height })`, `bringToFront()`, `keyboard.press(key)`, `keyboard.type(text)`, `mouse.click(x, y)`
+- `setOffline(offline)`, `isOffline()` — cut the tab off from the network (Chrome DevTools' Offline mode) or bring it back. It covers the page, its frames and its workers: requests fail, `navigator.onLine` is `false` and the page gets `offline` and `online` events. Other tabs stay online, and apart brings the tab back online when the script lets go of it.
 - `_sendToTarget(method, params)` — raw DevTools Protocol command
 
 **Locator**
@@ -271,6 +272,7 @@ apart assumes the person, or agent, writing scripts is trusted, and that web pag
 - In your Chrome, apart cannot open or control `chrome://` pages, the Chrome Web Store or other extensions' pages: Chrome does not let extensions debug them. Headless runs can, so use `--headless` for those.
 - In your Chrome, Chrome shows an "apart started debugging this browser" bar while a script runs. Chrome shows it for every extension that uses the debugger, and only a Chrome launch flag hides it. Headless runs show nothing.
 - Frames: snapshots go four frames deep and include up to 20 frames; deeper or extra frames are left out.
+- `setOffline` is not applied to service workers, so requests a service worker makes itself may still reach the network while the tab is offline.
 - Uploads fill file inputs directly. A site that opens a file picker without a file input (some drag-and-drop widgets) cannot be given a file yet.
 
 ## Development

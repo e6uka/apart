@@ -269,6 +269,8 @@ export class Page {
   private nextFrameRef = 1;
   private worlds = new Map<string, number>();
   private childSessions = new Map<string, string>();
+  private workerSessions = new Set<string>();
+  private offline = false;
   private listeners = new Map<PageEvent, Set<Listener>>();
   private downloadMode: DownloadMode = null;
   private downloadStaging: string | null = null;
@@ -441,6 +443,25 @@ export class Page {
 
   async setViewportSize(size: { width: number; height: number }): Promise<void> {
     await this.send("Emulation.setDeviceMetricsOverride", { ...size, deviceScaleFactor: 1, mobile: false });
+  }
+
+  async setOffline(offline: boolean): Promise<void> {
+    this.offline = Boolean(offline);
+    await this.applyOffline(undefined);
+    await Promise.all([...this.childSessions.keys(), ...this.workerSessions].map((sessionId) => this.applyOffline(sessionId).catch(() => undefined)));
+  }
+
+  isOffline(): boolean {
+    return this.offline;
+  }
+
+  private async restoreOnline(): Promise<void> {
+    if (this.offline) await this.setOffline(false).catch(() => undefined);
+  }
+
+  private async applyOffline(sessionId: string | undefined): Promise<void> {
+    await this.send("Network.enable", {}, sessionId);
+    await this.send("Network.emulateNetworkConditions", { offline: this.offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }, sessionId);
   }
 
   async bringToFront(): Promise<void> {
@@ -616,6 +637,7 @@ export class Page {
 
   async close(): Promise<void> {
     if (this.detached) return;
+    if (this.ownership === "borrowed") await this.restoreOnline();
     this.detached = true;
     this.unsubscribe();
     this.failLoadWaiters();
@@ -626,6 +648,7 @@ export class Page {
 
   async leaveOpen(agent?: string, agentPid?: number): Promise<void> {
     if (this.detached) return;
+    await this.restoreOnline();
     this.detached = true;
     this.unsubscribe();
     this.failLoadWaiters();
@@ -1012,15 +1035,24 @@ export class Page {
   }
 
   private onChildAttached(params: Record<string, any>): void {
-    if (params.targetInfo?.type !== "iframe" || typeof params.sessionId !== "string") return;
+    if (typeof params.sessionId !== "string") return;
     const sessionId = params.sessionId;
+    const type = params.targetInfo?.type;
+    if (type === "worker") {
+      this.workerSessions.add(sessionId);
+      if (this.offline) void this.applyOffline(sessionId).catch(() => undefined);
+      return;
+    }
+    if (type !== "iframe") return;
     this.childSessions.set(sessionId, String(params.targetInfo.targetId));
     void this.send("Page.enable", {}, sessionId).catch(() => undefined);
     void this.send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId).catch(() => undefined);
+    if (this.offline) void this.applyOffline(sessionId).catch(() => undefined);
   }
 
   private onChildDetached(sessionId: string): void {
     this.childSessions.delete(sessionId);
+    this.workerSessions.delete(sessionId);
     for (const frame of this.frameMap.values()) if (frame.sessionId === sessionId) this.worlds.delete(frame.id);
   }
 
