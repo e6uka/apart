@@ -7,6 +7,7 @@ import { resolveInside } from "./confined-fs";
 import type { CompletedDownload } from "../shared/protocol";
 import { diffTrees } from "./diff";
 import { keyDescriptor } from "./keys";
+import { RunControl } from "./control";
 
 export type Ownership = "owned" | "borrowed";
 export interface SnapshotOptions { interactive?: boolean; maxTextLength?: number; maxEntries?: number }
@@ -58,6 +59,7 @@ const HIT_TEST = `function(px, py) {
   const x = px == null ? rect.left + rect.width / 2 : rect.left + px;
   const y = py == null ? rect.top + rect.height / 2 : rect.top + py;
   let hit = this.ownerDocument.elementFromPoint(x, y);
+  if (hit && hit.localName === "apart-overlay") hit = this.ownerDocument.elementsFromPoint(x, y).find((node) => node.localName !== "apart-overlay") || null;
   while (hit && hit.shadowRoot) {
     const inner = hit.shadowRoot.elementFromPoint(x, y);
     if (!inner || inner === hit) break;
@@ -71,6 +73,7 @@ const MAX_FRAMES_PER_SNAPSHOT = 20;
 const MAX_FRAME_DEPTH = 4;
 const CHILD_FRAME_MAX_ENTRIES = 500;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+const OVERLAY_TICK_MS = 400;
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const FRAME_MARKER = /^(\s*)- @@frame:(f\d+)@@$/;
 const REF_IN_FRAME = /^(?:\[ref=)?(f\d+)e\d+\]?$/;
@@ -268,7 +271,17 @@ export class Page {
   private frameByRef = new Map<string, string>();
   private nextFrameRef = 1;
   private worlds = new Map<string, number>();
+  private pendingWorlds = new Map<string, Promise<number>>();
+  private overlayTimer: NodeJS.Timeout | null = null;
+  private overlaySyncing = false;
+  private overlayOff: (() => void) | null = null;
+  private cursorAt: { x: number; y: number } | null = null;
+  private actionDepth = 0;
+  private heldInputs = new Set<string>();
+  private closing = false;
   private childSessions = new Map<string, string>();
+  private workerSessions = new Set<string>();
+  private offline = false;
   private listeners = new Map<PageEvent, Set<Listener>>();
   private downloadMode: DownloadMode = null;
   private downloadStaging: string | null = null;
@@ -286,6 +299,8 @@ export class Page {
     initialUrl: string,
     private readonly onVisit: (url: string) => void = () => undefined,
     private readonly log: (text: string) => void = () => undefined,
+    readonly control: RunControl = new RunControl(),
+    private readonly overlayEnabled = true,
   ) {
     this.targetId = String(tabId);
     this.currentUrl = initialUrl;
@@ -293,19 +308,23 @@ export class Page {
     this.keyboard = { press: (key) => this.pressKey(key), type: (text) => this.insertText(text) };
     this.mouse = {
       click: (x, y, options) => this.mouseClick(x, y, options),
-      move: (x, y) => this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }),
-      wheel: (deltaX, deltaY) => this.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 0, y: 0, deltaX, deltaY }),
+      move: (x, y) => this.mouseMove(x, y),
+      wheel: async (deltaX, deltaY) => {
+        await this.inputGate();
+        await this.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 0, y: 0, deltaX, deltaY });
+      },
     };
   }
 
-  static async attach(bridge: BrowserBackend, tabId: number, ownership: Ownership, runDir: string, initialUrl: string, onVisit?: (url: string) => void, log?: (text: string) => void): Promise<Page> {
-    const page = new Page(bridge, tabId, ownership, runDir, initialUrl, onVisit, log);
+  static async attach(bridge: BrowserBackend, tabId: number, ownership: Ownership, runDir: string, initialUrl: string, onVisit?: (url: string) => void, log?: (text: string) => void, control?: RunControl, overlay = true): Promise<Page> {
+    const page = new Page(bridge, tabId, ownership, runDir, initialUrl, onVisit, log, control, overlay);
     onVisit?.(initialUrl);
     await bridge.request("debugger.attach", { tabId });
     await page.send("Page.enable");
     await page.send("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => undefined);
     await page.send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }).catch(() => undefined);
     await page.enableDownloads();
+    page.startOverlay();
     return page;
   }
 
@@ -332,13 +351,13 @@ export class Page {
     const timeout = opts.timeout ?? DEFAULT_TIMEOUT_MS;
     this.listenersFor(event);
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const cancel = this.control.timer(timeout, () => {
         this.off(event, listener);
         reject(new TimeoutError(`Timeout ${timeout}ms exceeded waiting for a ${event}`));
-      }, timeout);
+      });
       const listener: Listener = async (value) => {
         if (opts.predicate && !(await opts.predicate(value))) return;
-        clearTimeout(timer);
+        cancel();
         this.off(event, listener);
         resolve(value);
       };
@@ -372,6 +391,11 @@ export class Page {
 
   async send<T = Record<string, any>>(method: string, params: CdpParams = {}, sessionId?: string): Promise<T> {
     if (this.detached) throw new Error(`Tab ${this.targetId} is closed`);
+    if (method === "Input.dispatchMouseEvent" || method === "Input.dispatchKeyEvent") this.trackHeld(method, params, sessionId);
+    if (method === "Input.dispatchMouseEvent" && this.overlayTimer) {
+      if (params.type === "mousePressed") await this.showPointer(params, sessionId, true);
+      else if (params.type === "mouseMoved") void this.showPointer(params, sessionId, false);
+    }
     return this.bridge.request<T>("debugger.send", { tabId: this.tabId, method, params, ...(sessionId ? { sessionId } : {}) });
   }
 
@@ -380,6 +404,7 @@ export class Page {
   }
 
   async goto(url: string, options: { timeout?: number; waitUntil?: "load" | "commit" | "domcontentloaded" | "networkidle" } = {}): Promise<void> {
+    await this.gate();
     const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
     const load = this.waitForLoad(timeout, `navigation to ${url}`);
     const result = await this.send<{ errorText?: string }>("Page.navigate", { url }).catch((error) => {
@@ -400,6 +425,7 @@ export class Page {
   }
 
   async reload(options: { timeout?: number } = {}): Promise<void> {
+    await this.gate();
     const load = this.waitForLoad(options.timeout ?? DEFAULT_TIMEOUT_MS, "reload");
     await this.send("Page.reload");
     this.worlds.clear();
@@ -423,6 +449,7 @@ export class Page {
   }
 
   async evaluate(fn: string | ((...args: any[]) => unknown), ...args: unknown[]): Promise<unknown> {
+    await this.gate();
     const expression = typeof fn === "function" ? `(${fn.toString()})(${serializeArgs(args)})` : String(fn);
     const result = await this.send<EvalResult>("Runtime.evaluate", {
       expression,
@@ -441,6 +468,27 @@ export class Page {
 
   async setViewportSize(size: { width: number; height: number }): Promise<void> {
     await this.send("Emulation.setDeviceMetricsOverride", { ...size, deviceScaleFactor: 1, mobile: false });
+  }
+
+  async setOffline(offline: boolean): Promise<void> {
+    this.offline = Boolean(offline);
+    void this.syncOverlay();
+    await this.applyOffline(undefined);
+    await Promise.all([...this.childSessions.keys(), ...this.workerSessions].map((sessionId) => this.applyOffline(sessionId).catch(() => undefined)));
+  }
+
+  isOffline(): boolean {
+    return this.offline;
+  }
+
+  private async restoreOnline(): Promise<void> {
+    if (this.offline) await this.setOffline(false).catch(() => undefined);
+  }
+
+  private async applyOffline(sessionId: string | undefined): Promise<void> {
+    if (this.offline) await this.send("Network.enable", {}, sessionId);
+    await this.send("Network.emulateNetworkConditions", { offline: this.offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }, sessionId);
+    if (!this.offline) await this.send("Network.disable", {}, sessionId);
   }
 
   async bringToFront(): Promise<void> {
@@ -462,20 +510,20 @@ export class Page {
     const matcher = typeof pattern === "function" ? pattern
       : isRegExp(pattern) ? (url: string) => { pattern.lastIndex = 0; return pattern.test(url); }
       : (url: string) => url === pattern || globToRegExp(String(pattern)).test(url);
-    const deadline = Date.now() + timeout;
+    const deadline = this.control.now() + timeout;
     while (!matcher(this.currentUrl)) {
-      if (Date.now() > deadline) throw new TimeoutError(`Timeout ${timeout}ms exceeded waiting for URL ${String(pattern)} (current: ${this.currentUrl})`);
+      if (this.control.now() > deadline) throw new TimeoutError(`Timeout ${timeout}ms exceeded waiting for URL ${String(pattern)} (current: ${this.currentUrl})`);
       await sleep(100);
     }
   }
 
   async waitForFunction(fn: string | ((...args: any[]) => unknown), arg?: unknown, options: { timeout?: number; polling?: number } = {}): Promise<unknown> {
     const timeout = options.timeout ?? DEFAULT_TIMEOUT_MS;
-    const deadline = Date.now() + timeout;
+    const deadline = this.control.now() + timeout;
     for (;;) {
       const value = arg === undefined ? await this.evaluate(fn) : await this.evaluate(fn, arg);
       if (value) return value;
-      if (Date.now() > deadline) throw new TimeoutError(`Timeout ${timeout}ms exceeded waiting for function`);
+      if (this.control.now() > deadline) throw new TimeoutError(`Timeout ${timeout}ms exceeded waiting for function`);
       await sleep(options.polling ?? 100);
     }
   }
@@ -543,7 +591,14 @@ export class Page {
       const size = metrics.cssContentSize ?? metrics.contentSize;
       params.clip = { x: 0, y: 0, width: Math.ceil(size.width), height: Math.min(Math.ceil(size.height), 16384), scale: 1 };
     }
-    const { data } = await this.send<{ data: string }>("Page.captureScreenshot", params);
+    await this.gate();
+    const hidden = this.overlayTimer ? await this.evalInWorld("__apart.ui.hide()", true).then(() => true, () => false) : false;
+    let data: string;
+    try {
+      ({ data } = await this.send<{ data: string }>("Page.captureScreenshot", params));
+    } finally {
+      if (hidden) await this.evalInWorld("__apart.ui.show()", true).catch(() => undefined);
+    }
     const buffer = Buffer.from(data, "base64");
     if (options.path) await this.saveArtifact(options.path, buffer);
     return buffer;
@@ -615,7 +670,12 @@ export class Page {
   }
 
   async close(): Promise<void> {
-    if (this.detached) return;
+    if (this.detached || this.closing) return;
+    this.closing = true;
+    if (this.ownership === "borrowed") {
+      await this.restoreOnline();
+      await this.stopOverlay(true);
+    } else await this.stopOverlay(false);
     this.detached = true;
     this.unsubscribe();
     this.failLoadWaiters();
@@ -625,7 +685,10 @@ export class Page {
   }
 
   async leaveOpen(agent?: string, agentPid?: number): Promise<void> {
-    if (this.detached) return;
+    if (this.detached || this.closing) return;
+    this.closing = true;
+    await this.restoreOnline();
+    await this.stopOverlay(true);
     this.detached = true;
     this.unsubscribe();
     this.failLoadWaiters();
@@ -634,6 +697,7 @@ export class Page {
   }
 
   async pressKey(key: string): Promise<void> {
+    await this.inputGate();
     const descriptor = keyDescriptor(key);
     const base = { key: descriptor.key, code: descriptor.code, windowsVirtualKeyCode: descriptor.keyCode, nativeVirtualKeyCode: descriptor.keyCode, modifiers: descriptor.modifiers };
     await this.send("Input.dispatchKeyEvent", { ...base, type: descriptor.text ? "keyDown" : "rawKeyDown", text: descriptor.text, unmodifiedText: descriptor.text });
@@ -641,10 +705,12 @@ export class Page {
   }
 
   async insertText(text: string): Promise<void> {
+    await this.inputGate();
     await this.send("Input.insertText", { text });
   }
 
   async mouseClick(x: number, y: number, options: { button?: "left" | "right" | "middle"; clickCount?: number; modifiers?: number } = {}, sessionId?: string): Promise<void> {
+    await this.inputGate();
     const button = options.button ?? "left";
     const clicks = options.clickCount ?? 1;
     await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers: options.modifiers ?? 0 }, sessionId);
@@ -655,7 +721,79 @@ export class Page {
   }
 
   async mouseMove(x: number, y: number, sessionId?: string): Promise<void> {
+    await this.inputGate();
     await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, sessionId);
+  }
+
+  async gate(): Promise<boolean> {
+    if (this.closing || this.detached) throw new Error(`Tab ${this.targetId} is closed`);
+    return this.control.gate();
+  }
+
+  async inAction<T>(action: () => Promise<T>): Promise<T> {
+    this.actionDepth += 1;
+    try {
+      return await action();
+    } finally {
+      this.actionDepth -= 1;
+    }
+  }
+
+  private async inputGate(): Promise<void> {
+    if (this.actionDepth > 0 || this.heldInputs.size > 0) return;
+    await this.gate();
+  }
+
+  private trackHeld(method: string, params: CdpParams, sessionId: string | undefined): void {
+    const key = method === "Input.dispatchMouseEvent" ? `mouse:${sessionId ?? ""}:${String(params.button ?? "left")}` : `key:${String(params.code ?? params.key ?? "")}`;
+    if (params.type === "mousePressed" || params.type === "keyDown" || params.type === "rawKeyDown") this.heldInputs.add(key);
+    else if (params.type === "mouseReleased" || params.type === "keyUp") this.heldInputs.delete(key);
+  }
+
+  private startOverlay(): void {
+    if (!this.overlayEnabled || this.bridge.headless || this.overlayTimer) return;
+    this.overlayTimer = setInterval(() => void this.syncOverlay(), OVERLAY_TICK_MS);
+    this.overlayOff = this.control.onChange(() => void this.syncOverlay());
+    void this.syncOverlay();
+  }
+
+  private async stopOverlay(remove: boolean): Promise<void> {
+    if (!this.overlayTimer) return;
+    clearInterval(this.overlayTimer);
+    this.overlayTimer = null;
+    this.overlayOff?.();
+    this.overlayOff = null;
+    if (remove && !this.detached) await this.evalInWorld("__apart.ui.remove()", true).catch(() => undefined);
+  }
+
+  private async syncOverlay(): Promise<void> {
+    if (!this.overlayTimer || this.detached || this.overlaySyncing) return;
+    this.overlaySyncing = true;
+    try {
+      const state = JSON.stringify({ paused: this.control.paused, offline: this.offline, cursor: this.cursorAt });
+      const request = await this.evalInWorld(`__apart.ui.tick(${state})`, true);
+      if (request === "pause" && this.control.pause(this)) this.log("[paused: you took over the tab. apart waits until you press Resume]");
+      else if (request === "resume" && this.control.resume()) this.log("[resumed: apart has control again]");
+    } catch {
+    } finally {
+      this.overlaySyncing = false;
+    }
+  }
+
+  private async showPointer(params: CdpParams, sessionId: string | undefined, press: boolean): Promise<void> {
+    try {
+      let x = Number(params.x);
+      let y = Number(params.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const frameId = sessionId ? this.childSessions.get(sessionId) : undefined;
+      if (sessionId && frameId) {
+        const offset = await this.frameOffset({ frameId, sessionId });
+        x += offset.x;
+        y += offset.y;
+      }
+      this.cursorAt = { x, y };
+      await this.evalInWorld(`__apart.ui.point(${x}, ${y}, ${press})`, true);
+    } catch {}
   }
 
   resolveArtifact(target: string): string {
@@ -729,7 +867,7 @@ export class Page {
   }
 
   async contextForOwner(owner: Locator, timeout = LOCATOR_TIMEOUT_MS): Promise<FrameContext> {
-    const deadline = Date.now() + timeout;
+    const deadline = this.control.now() + timeout;
     for (let attempt = 0; ; attempt++) {
       const frameId = await owner.childFrameId();
       if (frameId) {
@@ -740,7 +878,7 @@ export class Page {
         }
         if (frame) return { frameId, sessionId: frame.sessionId };
       }
-      if (Date.now() > deadline) throw new TimeoutError(`Timeout ${timeout}ms exceeded waiting for ${owner.describe()} to be a loaded frame`);
+      if (this.control.now() > deadline) throw new TimeoutError(`Timeout ${timeout}ms exceeded waiting for ${owner.describe()} to be a loaded frame`);
       await sleep(POLL_INTERVALS_MS[Math.min(attempt, POLL_INTERVALS_MS.length - 1)]);
     }
   }
@@ -964,6 +1102,16 @@ export class Page {
   private async ensureWorld(ctx: FrameContext): Promise<number> {
     const existing = this.worlds.get(ctx.frameId);
     if (existing !== undefined) return existing;
+    const pending = this.pendingWorlds.get(ctx.frameId);
+    if (pending) return pending;
+    const created = this.createWorld(ctx).finally(() => {
+      if (this.pendingWorlds.get(ctx.frameId) === created) this.pendingWorlds.delete(ctx.frameId);
+    });
+    this.pendingWorlds.set(ctx.frameId, created);
+    return created;
+  }
+
+  private async createWorld(ctx: FrameContext): Promise<number> {
     const { executionContextId } = await this.send<{ executionContextId: number }>("Page.createIsolatedWorld", {
       frameId: ctx.frameId,
       worldName: "__apart",
@@ -989,17 +1137,17 @@ export class Page {
 
   private waitForLoad(timeout: number, what: string): { promise: Promise<void>; cancel: () => void } {
     let settle: () => void = () => undefined;
-    let timer: NodeJS.Timeout;
+    let cancelTimer: () => void = () => undefined;
     const promise = new Promise<void>((resolve, reject) => {
       settle = () => {
-        clearTimeout(timer);
+        cancelTimer();
         this.loadWaiters.delete(settle);
         resolve();
       };
-      timer = setTimeout(() => {
+      cancelTimer = this.control.timer(timeout, () => {
         this.loadWaiters.delete(settle);
         reject(new TimeoutError(`Timeout ${timeout}ms exceeded waiting for ${what}`));
-      }, timeout);
+      });
       this.loadWaiters.add(settle);
     });
     promise.catch(() => undefined);
@@ -1012,15 +1160,24 @@ export class Page {
   }
 
   private onChildAttached(params: Record<string, any>): void {
-    if (params.targetInfo?.type !== "iframe" || typeof params.sessionId !== "string") return;
+    if (typeof params.sessionId !== "string") return;
     const sessionId = params.sessionId;
+    const type = params.targetInfo?.type;
+    if (type === "worker") {
+      this.workerSessions.add(sessionId);
+      if (this.offline) void this.applyOffline(sessionId).catch(() => undefined);
+      return;
+    }
+    if (type !== "iframe") return;
     this.childSessions.set(sessionId, String(params.targetInfo.targetId));
     void this.send("Page.enable", {}, sessionId).catch(() => undefined);
     void this.send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId).catch(() => undefined);
+    if (this.offline) void this.applyOffline(sessionId).catch(() => undefined);
   }
 
   private onChildDetached(sessionId: string): void {
     this.childSessions.delete(sessionId);
+    this.workerSessions.delete(sessionId);
     for (const frame of this.frameMap.values()) if (frame.sessionId === sessionId) this.worlds.delete(frame.id);
   }
 
@@ -1081,12 +1238,18 @@ export class Page {
         break;
       case "Page.loadEventFired":
         this.failLoadWaiters();
+        void this.syncOverlay();
+        break;
+      case "Page.domContentEventFired":
+        void this.syncOverlay();
         break;
       case "Page.javascriptDialogOpening":
         this.onDialog(params);
         break;
       case "__detached":
         this.detached = true;
+        void this.stopOverlay(false);
+        if (this.control.pausedBy(this) && this.control.resume()) this.log("[resumed: the paused tab closed]");
         this.unsubscribe();
         this.failLoadWaiters();
         this.failDownloads(new Error("The tab closed before the download finished"));
@@ -1096,6 +1259,8 @@ export class Page {
 }
 
 type Handle = { objectId: string; ctx?: FrameContext };
+
+class PausedMidAction extends Error {}
 type FrameResolver = () => Promise<FrameContext>;
 
 export class FrameLocator {
@@ -1146,33 +1311,34 @@ export class Locator {
       await this.releaseHandle(await this.resolve({ timeout, visible: state === "visible" }));
       return;
     }
-    const deadline = Date.now() + timeout;
+    const deadline = this.page.control.now() + timeout;
     for (let attempt = 0; ; attempt++) {
       const handle = await this.query().catch(() => null);
       if (!handle) return;
       const visible = state === "hidden" ? await this.call(handle, "function(){ return __apart.visible(this) }") : true;
       await this.releaseHandle(handle);
       if (state === "hidden" && !visible) return;
-      if (Date.now() > deadline) throw new TimeoutError(`Timeout ${timeout}ms exceeded waiting for ${this.describe()} to be ${state}`);
+      if (this.page.control.now() > deadline) throw new TimeoutError(`Timeout ${timeout}ms exceeded waiting for ${this.describe()} to be ${state}`);
       await sleep(POLL_INTERVALS_MS[Math.min(attempt, POLL_INTERVALS_MS.length - 1)]);
     }
   }
 
   async click(options: { button?: "left" | "right" | "middle"; clickCount?: number; timeout?: number; position?: { x: number; y: number }; modifiers?: string[]; force?: boolean } = {}): Promise<void> {
     const timeout = options.timeout ?? LOCATOR_TIMEOUT_MS;
-    const deadline = Date.now() + timeout;
+    const deadline = this.page.control.now() + timeout;
     await this.withElement(async (handle) => {
       let point = await this.clickPoint(handle, options.position, true);
       for (let attempt = 0; !options.force; attempt++) {
         const covering = (await this.call(handle, HIT_TEST, [options.position?.x ?? null, options.position?.y ?? null])) as string;
         if (!covering) break;
-        if (Date.now() > deadline) {
+        if (this.page.control.now() > deadline) {
           throw new Error(`${this.describe()} is covered by ${covering} at the point apart would click, so the click would not reach it. Scroll or close what covers it, or pass { force: true }.`);
         }
         await sleep(POLL_INTERVALS_MS[Math.min(attempt, POLL_INTERVALS_MS.length - 1)]);
         point = await this.clickPoint(handle, options.position, true);
       }
       const modifiers = (options.modifiers ?? []).reduce((bits, name) => bits | keyDescriptor(`${name}+a`).modifiers & ~8, 0);
+      if (await this.page.gate()) throw new PausedMidAction();
       await this.page.mouseClick(point.x, point.y, { button: options.button, clickCount: options.clickCount, modifiers }, handle.ctx?.sessionId);
     }, options.timeout);
   }
@@ -1421,19 +1587,26 @@ export class Locator {
   }
 
   private async withElement<T>(action: (handle: Handle) => Promise<T>, timeout = LOCATOR_TIMEOUT_MS, visible = true): Promise<T> {
-    const handle = await this.resolve({ timeout, visible });
-    try {
-      return await action(handle);
-    } finally {
-      await this.releaseHandle(handle);
+    for (;;) {
+      await this.page.gate();
+      const handle = await this.resolve({ timeout, visible });
+      try {
+        if (await this.page.gate()) continue;
+        return await this.page.inAction(() => action(handle));
+      } catch (error) {
+        if (error instanceof PausedMidAction) continue;
+        throw error;
+      } finally {
+        await this.releaseHandle(handle);
+      }
     }
   }
 
   private async resolve(options: { timeout: number; visible: boolean }): Promise<Handle> {
-    const deadline = Date.now() + options.timeout;
+    const deadline = this.page.control.now() + options.timeout;
     for (let attempt = 0; ; attempt++) {
       const handle = await this.query().catch((error) => {
-        if (Date.now() > deadline) throw error;
+        if (this.page.control.now() > deadline) throw error;
         return null;
       });
       if (handle) {
@@ -1441,7 +1614,7 @@ export class Locator {
         if (await this.call(handle, "function(){ return __apart.visible(this) }")) return handle;
         await this.releaseHandle(handle);
       }
-      if (Date.now() > deadline) {
+      if (this.page.control.now() > deadline) {
         throw new TimeoutError(`Timeout ${options.timeout}ms exceeded waiting for ${this.describe()}${handle ? " to be visible" : ""}`);
       }
       await sleep(POLL_INTERVALS_MS[Math.min(attempt, POLL_INTERVALS_MS.length - 1)]);

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -48,10 +48,18 @@ describe("RunHistory", () => {
 describe("config", () => {
   it("defaults to your Chrome until a browser is chosen", async () => {
     const file = path.join(mkdtempSync(path.join(os.tmpdir(), "apart-config-")), "config.json");
-    expect(await readConfig(file)).toEqual({ defaultBrowser: "chrome", keepTabs: true, saved: false });
+    expect(await readConfig(file)).toEqual({ defaultBrowser: "chrome", keepTabs: true, overlay: true, saved: false });
     await writeConfig({ defaultBrowser: "headless" }, file);
-    expect(await readConfig(file)).toEqual({ defaultBrowser: "headless", keepTabs: true, saved: true });
+    expect(await readConfig(file)).toEqual({ defaultBrowser: "headless", keepTabs: true, overlay: true, saved: true });
     await writeConfig({ keepTabs: false }, file);
-    expect(await readConfig(file)).toEqual({ defaultBrowser: "headless", keepTabs: false, saved: true });
+    expect(await readConfig(file)).toEqual({ defaultBrowser: "headless", keepTabs: false, overlay: true, saved: true });
+    await writeConfig({ overlay: false }, file);
+    expect(await readConfig(file)).toEqual({ defaultBrowser: "headless", keepTabs: false, overlay: false, saved: true });
+  });
+
+  it("shows the overlay for config files saved before it existed", async () => {
+    const file = path.join(mkdtempSync(path.join(os.tmpdir(), "apart-config-")), "config.json");
+    writeFileSync(file, JSON.stringify({ defaultBrowser: "arc", keepTabs: false }));
+    expect((await readConfig(file)).overlay).toBe(true);
   });
 });

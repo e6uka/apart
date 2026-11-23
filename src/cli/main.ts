@@ -52,6 +52,7 @@ function help(style: Style = createStyle()): string {
     row("apart config", "Show settings"),
     row("apart config default-browser <name>"),
     row("apart config keep-tabs on|off"),
+    row("apart config overlay on|off"),
     "",
     bold("Daemon"),
     row("apart daemon status|start|stop|restart"),
@@ -429,6 +430,7 @@ async function commandDaemon(positional: string[], flags: Map<string, string | t
   console.log(`  ${label("Browsers")}${browsers}`);
   console.log(`  ${label("Default")}${status.defaultBrowser}`);
   console.log(`  ${label("Tabs")}${status.keepTabs ? "stay open when a script ends" : "close when a script ends"}`);
+  if (typeof status.overlay === "boolean") console.log(`  ${label("Overlay")}${status.overlay ? "glow, cursor and Take over button while a script runs" : "off"}`);
   console.log(`  ${label("Headless")}${status.headlessRunning ? "running" : `idle ${dim("· starts on the next --headless run")}`}`);
   const update = await newerVersion();
   if (update) console.log(`  ${label("Update")}${update.latest} is out ${dim("·")} ${style.accent("apart update")}`);
@@ -447,6 +449,7 @@ async function commandConfig(positional: string[]): Promise<number> {
   if (!key) {
     console.log(`default-browser  ${config.defaultBrowser}${config.saved ? "" : " (not chosen yet; this is the default)"}`);
     console.log(`keep-tabs        ${config.keepTabs ? "on" : "off"}`);
+    console.log(`overlay          ${config.overlay ? "on" : "off"}`);
     return 0;
   }
   if (key === "default-browser") {
@@ -481,7 +484,23 @@ async function commandConfig(positional: string[]): Promise<number> {
       : "Tabs a script opens now close when it ends.");
     return 0;
   }
-  console.error(`Unknown setting: ${key}. Settings: default-browser, keep-tabs`);
+  if (key === "overlay") {
+    if (value === undefined) {
+      console.log(config.overlay ? "on" : "off");
+      return 0;
+    }
+    if (value !== "on" && value !== "off") {
+      console.error("overlay must be on or off");
+      return 2;
+    }
+    await writeConfig({ overlay: value === "on" });
+    await notifyConfigChanged();
+    console.log(value === "on"
+      ? "From the next run, tabs apart drives in your browser glow at the edges, show apart's cursor and have a Take over button."
+      : "From the next run, apart drives tabs without the glow, cursor or Take over button. Sites can no longer see an apart element in the page, and you can no longer pause a run from the tab.");
+    return 0;
+  }
+  console.error(`Unknown setting: ${key}. Settings: default-browser, keep-tabs, overlay`);
   return 2;
 }
 

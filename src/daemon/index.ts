@@ -71,7 +71,7 @@ export async function runDaemon(options: { port: number; version: string; checkU
   let config = await readConfig();
   const headless = new HeadlessBrowser({ profileDir: HEADLESS_PROFILE_DIR, log });
   let latestVersion: string | null = null;
-  const configMessage = () => ({ type: "config" as const, defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs, browsers: bridge.browsers().map((item) => item.name), latestVersion });
+  const configMessage = () => ({ type: "config" as const, defaultBrowser: config.defaultBrowser, keepTabs: config.keepTabs, overlay: config.overlay, browsers: bridge.browsers().map((item) => item.name), latestVersion });
   const announceConfig = async (): Promise<void> => {
     config = await readConfig();
     bridge.notify(configMessage());
@@ -94,6 +94,13 @@ export async function runDaemon(options: { port: number; version: string; checkU
       .then(announceConfig)
       .then(() => log(`keep tabs open set to ${keep} from the extension`))
       .catch((error) => log(`could not save the tab setting: ${error instanceof Error ? error.message : String(error)}`));
+  });
+  bridge.on("set-overlay", (show: unknown) => {
+    if (typeof show !== "boolean") return;
+    void writeConfig({ overlay: show })
+      .then(announceConfig)
+      .then(() => log(`overlay set to ${show} from the extension`))
+      .catch((error) => log(`could not save the overlay setting: ${error instanceof Error ? error.message : String(error)}`));
   });
   bridge.on("set-default-browser", (browser: unknown) => {
     if (!isBrowser(browser)) return;
@@ -145,6 +152,7 @@ export async function runDaemon(options: { port: number; version: string; checkU
     headlessRunning: headless.connected,
     defaultBrowser: config.defaultBrowser,
     keepTabs: config.keepTabs,
+    overlay: config.overlay,
   });
 
   const handleRun = async (socket: net.Socket, request: Extract<CliRequest, { type: "run" }>, browser: string): Promise<void> => {
@@ -186,6 +194,7 @@ export async function runDaemon(options: { port: number; version: string; checkU
         timeoutMs,
         bridge: backend,
         keepTabs: Boolean(target) && config.keepTabs,
+        overlay: config.overlay,
         agent: cleanAgent(request.agent),
         agentPid: cleanAgent(request.agent) ? cleanPid(request.agentPid) : undefined,
         emit: (text) => write(socket, { type: "out", text }),

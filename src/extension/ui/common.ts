@@ -58,11 +58,12 @@ export interface ExtensionState {
   browsers: string[] | null;
   browserName: string | null;
   keepTabs: boolean | null;
+  overlay: boolean | null;
   latestVersion: string | null;
 }
 
 export async function readState(): Promise<ExtensionState> {
-  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser", "keepTabs", "browser", "browsers", "browserName", "latestVersion"]);
+  const stored = await chrome.storage.local.get(["status", "daemon", "current", "runs", "port", "defaultBrowser", "keepTabs", "overlay", "browser", "browsers", "browserName", "latestVersion"]);
   return {
     status: (stored.status as ExtensionState["status"]) ?? null,
     daemon: (stored.daemon as DaemonInfo) ?? null,
@@ -74,6 +75,7 @@ export async function readState(): Promise<ExtensionState> {
     browsers: Array.isArray(stored.browsers) ? (stored.browsers as unknown[]).filter(isBrowserName) : null,
     browserName: isBrowserName(stored.browserName) ? stored.browserName : null,
     keepTabs: typeof stored.keepTabs === "boolean" ? stored.keepTabs : null,
+    overlay: typeof stored.overlay === "boolean" ? stored.overlay : null,
     latestVersion: isReleaseVersion(stored.latestVersion) ? stored.latestVersion : null,
   };
 }
