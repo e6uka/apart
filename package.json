@@ -37,7 +37,7 @@
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "test": "vitest run",
-    "test:e2e": "APART_E2E=1 vitest run test/e2e.test.ts test/headless.test.ts test/features.test.ts test/multi.test.ts test/offline.test.ts",
+    "test:e2e": "APART_E2E=1 vitest run test/e2e.test.ts test/headless.test.ts test/features.test.ts test/multi.test.ts test/offline.test.ts test/overlay.test.ts",
     "typecheck": "tsc --noEmit",
     "brand": "node scripts/brand.mjs",
     "package:store": "node scripts/build.mjs --store",

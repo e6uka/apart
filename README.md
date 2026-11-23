@@ -63,6 +63,18 @@ Add it from the [Chrome Web Store](https://chromewebstore.google.com/detail/apar
 
 Tabs apart opens sit in a pink "apart" tab group, so they are easy to tell apart from yours.
 
+### Watching and taking over
+
+While a script drives a tab in your browser, that tab shows:
+
+- **A glow** around the edges of the page, so you can tell at a glance which tab apart is working in.
+- **A cursor** that moves to each point apart clicks, hovers or drags, with a ripple on every click.
+- **A Take over button** in a small pill at the bottom. Press it and apart stops at its next step, so you can sign in, solve a captcha or fix something yourself. The glow turns grey and the button becomes **Resume**; press it to hand control back. The script's output says when you paused and resumed. Paused time does not count toward the script's time limit or its waits. A pause that lasts more than 15 minutes ends the script, and closing the paused tab resumes it.
+
+apart stops between steps, never in the middle of one, so a key or mouse button is never left held down. If you paused while apart was about to click, it finds the element again before clicking, in case you scrolled or the page changed.
+
+The glow, cursor and pill are not part of the page as the script sees it: they are left out of snapshots, screenshots and PDFs, and clicks pass through the pill. They disappear when the script ends, including from tabs kept open for the next run, and on their own within a few seconds if apart stops unexpectedly. Headless runs show none of this, since nobody is watching. The page itself can find the overlay's `<apart-overlay>` element in its DOM, but cannot see inside it or press its button.
+
 ## Requirements
 
 - macOS or Linux, Node.js 22 or newer

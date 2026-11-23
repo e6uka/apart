@@ -1,3 +1,4 @@
+import { overlay } from "./overlay";
 import { computeAccessibleName } from "dom-accessibility-api";
 
 type SnapshotOptions = { interactive?: boolean; maxTextLength?: number; maxEntries?: number; refPrefix?: string };
@@ -334,7 +335,7 @@ function unannotate(): void {
   document.getElementById(ANNOTATION_ID)?.remove();
 }
 
-const api = { snapshot, find, countOf, visible: isVisible, describe, annotate, unannotate, markFrame, refCount: () => refs.size };
+const api = { snapshot, find, countOf, visible: isVisible, describe, annotate, unannotate, markFrame, refCount: () => refs.size, ui: overlay };
 
 (globalThis as unknown as { __apart: typeof api }).__apart = api;
 
