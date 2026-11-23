@@ -460,8 +460,9 @@ export class Page {
   }
 
   private async applyOffline(sessionId: string | undefined): Promise<void> {
-    await this.send("Network.enable", {}, sessionId);
+    if (this.offline) await this.send("Network.enable", {}, sessionId);
     await this.send("Network.emulateNetworkConditions", { offline: this.offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }, sessionId);
+    if (!this.offline) await this.send("Network.disable", {}, sessionId);
   }
 
   async bringToFront(): Promise<void> {
